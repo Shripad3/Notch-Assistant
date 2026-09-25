@@ -31,6 +31,25 @@ public enum WakePhrase {
         return nil
     }
 
+    /// Words a command starts with. Used to drop a misheard wake word from
+    /// the front ("I said open…", "Hi friend open…" for "Alfred, open…").
+    static let commandStarts: Set<String> = [
+        "open", "play", "search", "go", "look", "launch", "start", "google", "watch", "show", "find", "where", "list",
+        "turn", "set", "mute", "unmute", "lock", "volume", "brightness", "brighter", "dimmer", "pause", "stop", "skip",
+        "next", "previous", "resume", "put", "make", "enable", "disable", "do",
+    ]
+
+    /// For a detection already confirmed by the recognizer: the command
+    /// without the wake word, or without a few misheard words before the
+    /// first command word. Unchanged when neither applies.
+    public static func commandAfterConfirmedWake(_ transcript: String) -> String {
+        if let command = command(from: transcript) { return command }
+        let words = transcript.split(separator: " ").map(String.init)
+        let keys = words.map(AppNameMatcher.key)
+        guard let start = keys.prefix(4).firstIndex(where: commandStarts.contains), start > 0 else { return transcript }
+        return words[start...].joined(separator: " ")
+    }
+
     /// True when the wake word appears anywhere in `text` (the recognizer
     /// listener's check; the coordinator confirms with `command(from:)`).
     public static func contains(_ text: String) -> Bool {

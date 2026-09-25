@@ -208,3 +208,19 @@ struct WakeDeduplicatorTests {
         #expect(WakeDeduplicator.isNew(range(0.0, 1.0), handledThrough: .zero))
     }
 }
+
+/// From the log: real commands the second recognizer transcribed without
+/// "Alfred", which were rejected before.
+struct ConfirmedWakeTests {
+    @Test(arguments: [
+        ("I said open Petnet properties.PDF", "open Petnet properties.PDF"),
+        ("Hi friend open process mini tutorial.PDF", "open process mini tutorial.PDF"),
+        ("Play Matt Armstrong's latest video on YouTube", "Play Matt Armstrong's latest video on YouTube"),
+        ("Alfred play some music", "play some music"),
+        ("Hey Alfred, turn on DND", "turn on DND"),
+        ("Good morning", "Good morning"),
+    ])
+    func tidies(transcript: String, command: String) {
+        #expect(WakePhrase.commandAfterConfirmedWake(transcript) == command)
+    }
+}

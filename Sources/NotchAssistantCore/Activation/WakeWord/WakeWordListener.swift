@@ -12,11 +12,15 @@ public final class WakeContext: @unchecked Sendable, Equatable {
     /// The room's noise floor in dBFS before the detection, for endpointing.
     public let ambientFloor: Float
     public let score: Float
+    /// True when the detector was itself a speech recognizer that
+    /// transcribed the wake word: no second confirmation is needed.
+    public let confirmed: Bool
 
-    init(preroll: [AVAudioPCMBuffer], ambientFloor: Float, score: Float) {
+    init(preroll: [AVAudioPCMBuffer], ambientFloor: Float, score: Float, confirmed: Bool = false) {
         self.preroll = preroll
         self.ambientFloor = ambientFloor
         self.score = score
+        self.confirmed = confirmed
     }
 
     public static func == (a: WakeContext, b: WakeContext) -> Bool { a === b }

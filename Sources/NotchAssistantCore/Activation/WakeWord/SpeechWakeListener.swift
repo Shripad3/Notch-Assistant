@@ -237,7 +237,7 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
         handledThrough = CMTimeMaximum(handledThrough, range.end)
         quietUntil = Date().addingTimeInterval(Self.refractory)
         Log.speech.notice("wake word: heard \"\(text, privacy: .public)\"")
-        onDetect(WakeContext(preroll: history.preroll, ambientFloor: history.ambientFloor(), score: 1))
+        onDetect(WakeContext(preroll: history.preroll, ambientFloor: history.ambientFloor(), score: 1, confirmed: true))
     }
 
     private func convert(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) -> AVAudioPCMBuffer? {

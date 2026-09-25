@@ -35,6 +35,7 @@ public actor SystemSTT: TranscriptionService {
         request.requiresOnDeviceRecognition = true
         request.shouldReportPartialResults = true
         request.addsPunctuation = false
+        request.contextualStrings = ["Alfred", "Hey Alfred"]
         self.request = request
         latest = ""
         finalText = nil

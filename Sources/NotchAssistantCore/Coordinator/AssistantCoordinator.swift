@@ -109,7 +109,12 @@ public actor AssistantCoordinator {
             await apply(.silence, session: id)
             return
         }
-        if wake != nil {
+        if let wake, wake.confirmed {
+            // The speech detector already transcribed "Alfred"; this second
+            // recognizer often mishears it ("I said…", "Hi friend…"), which
+            // rejected real commands. Only tidy the transcript.
+            transcript = WakePhrase.commandAfterConfirmedWake(transcript)
+        } else if wake != nil {
             guard let command = WakePhrase.command(from: transcript) else {
                 // A false detection: the wake word isn't in what was said.
                 Log.coordinator.notice("wake word not confirmed in \"\(transcript, privacy: .public)\"; ignoring")
