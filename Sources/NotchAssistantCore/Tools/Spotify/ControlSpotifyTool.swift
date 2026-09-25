@@ -56,10 +56,23 @@ struct ControlSpotifyTool: AssistantTool {
             throw ToolError("Spotify isn't installed")
         }
         try Task.checkCancellation()
+        // Only playing is worth launching Spotify for.
+        if ["pause", "next", "previous", "setVolume"].contains(arguments.action), !Self.isRunning {
+            throw ToolError("Spotify isn't running")
+        }
         switch arguments.action {
         case "play":
+            try await launchIfNeeded()
             try await tell("play")
-            return "Playing on Spotify"
+            if try await becomesPlaying() { return "Playing on Spotify" }
+            // Freshly launched Spotify can have nothing to resume.
+            try await tell("play")
+            if try await becomesPlaying() { return "Playing on Spotify" }
+            if SpotifyWebAPI.isSignedIn, let liked = try await SpotifyWebAPI.shared.likedSongs() {
+                try await tell("play track \(AppleScript.quoted(liked.uri))")
+                if try await becomesPlaying() { return "Playing \(liked.title)" }
+            }
+            throw ToolError("Spotify opened but had nothing to play. Try “play” with a song or playlist name")
         case "pause":
             try await tell("pause")
             return "Paused Spotify"
@@ -91,7 +104,11 @@ struct ControlSpotifyTool: AssistantTool {
             }
             try Task.checkCancellation()
             Log.tools.notice("controlSpotify → \(match.uri, privacy: .public)")
+            try await launchIfNeeded()
             try await tell("play track \(AppleScript.quoted(match.uri))")
+            guard try await becomesPlaying() else {
+                throw ToolError("Spotify didn't start playing \(match.title)")
+            }
             return "Playing \(match.title)"
         default:
             throw ToolError("Spotify can't do \"\(arguments.action)\"")
@@ -130,6 +147,49 @@ struct ControlSpotifyTool: AssistantTool {
             return query.isEmpty ? nil : .init(action: "playPlaylist", query: query, value: nil)
         }
         return .init(action: "playSong", query: query, value: nil)
+    }
+
+    private static var isRunning: Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).isEmpty
+    }
+
+    /// Launches Spotify in the background and waits until it answers, up to
+    /// 20 s. A just-launched Spotify ignored "play", so it isn't sent until
+    /// Spotify reports a player state. Escape cancels the wait.
+    private func launchIfNeeded() async throws {
+        guard !Self.isRunning else { return }
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.bundleIdentifier) else { return }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        _ = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        let deadline = ContinuousClock.now + .seconds(20)
+        while ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            if (try? await playerState()) != nil {
+                // Answering isn't quite ready to play; give it a moment.
+                try await Task.sleep(for: .milliseconds(800))
+                return
+            }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        throw ToolError("Spotify took too long to open")
+    }
+
+    /// Whether Spotify reports "playing" within about two seconds.
+    private func becomesPlaying() async throws -> Bool {
+        for _ in 0..<5 {
+            try Task.checkCancellation()
+            if try await playerState() == "playing" { return true }
+            try await Task.sleep(for: .milliseconds(400))
+        }
+        return false
+    }
+
+    private func playerState() async throws -> String? {
+        try await AppleScript.evaluate(
+            "tell application id \"\(Self.bundleIdentifier)\" to get player state as string",
+            controlling: "Spotify"
+        ).first
     }
 
     private func tell(_ command: String) async throws {
