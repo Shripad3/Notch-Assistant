@@ -1,0 +1,35 @@
+# Starter intent corpus (spec §14). Run: swift run plan-cli - < Tests/Fixtures/intents.txt
+# Groups are headed by the expected tool sequence.
+
+# openApp
+open spotify
+launch visual studio code
+open the notes app
+open my browser
+
+# openURL
+open youtube
+go to github.com
+open youtube in arc
+
+# webSearch
+search for porsche 911 prices
+look up the mat armstrong channel
+
+# compound
+Open Arc and play the Mat Armstrong YouTube video
+open spotify and then open gmail
+
+# no tool fits → empty steps (a weather question may reasonably become webSearch)
+what's the weather like
+delete everything in my downloads folder
+run rm -rf in the terminal
+
+# controlSpotify (model path — direct phrasings are covered by unit tests)
+can you put on some music
+play something by queen
+stop the song for a second
+
+# systemControl (model path)
+make it a bit louder
+it's too loud

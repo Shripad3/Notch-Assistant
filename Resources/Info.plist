@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>dev.shripad.NotchAssistant</string>
+	<key>CFBundleName</key>
+	<string>Notch Assistant</string>
+	<key>CFBundleDisplayName</key>
+	<string>Notch Assistant</string>
+	<key>CFBundleExecutable</key>
+	<string>NotchAssistant</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.0.1</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Notch Assistant listens while you hold the hotkey so it can hear your command.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Notch Assistant controls Spotify playback, and asks System Events to put the Mac to sleep, when you tell it to.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Notch Assistant finds and opens files here when you ask, by name and date only. It never reads what's inside them.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Notch Assistant finds and opens files here when you ask, by name and date only. It never reads what's inside them.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Notch Assistant finds and opens files here when you ask, by name and date only. It never reads what's inside them.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Notch Assistant turns your spoken command into text on this Mac. Audio never leaves the device.</string>
+</dict>
+</plist>
