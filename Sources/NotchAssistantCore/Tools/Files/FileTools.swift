@@ -148,6 +148,16 @@ struct FindFilesTool: AssistantTool {
 }
 
 enum FileTools {
+    /// "Desktop", or "BDM in Projects": enough to tell same-named files apart.
+    static func location(of url: URL) -> String {
+        let folder = url.deletingLastPathComponent()
+        let parent = folder.deletingLastPathComponent().lastPathComponent
+        let roots = Set(FileAccess.scopedRoots.map(\.lastPathComponent))
+        return roots.contains(folder.lastPathComponent) || parent.isEmpty
+            ? folder.lastPathComponent
+            : "\(folder.lastPathComponent) in \(parent)"
+    }
+
     /// Opens a found file, validating its path again at the moment of use.
     static func open(_ file: FoundFile) async throws -> String {
         try Task.checkCancellation()

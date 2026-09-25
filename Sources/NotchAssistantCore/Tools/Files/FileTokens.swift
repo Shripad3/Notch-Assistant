@@ -62,10 +62,15 @@ enum FileTokens {
 public enum ResultActions {
     public static func select(_ id: String) async throws -> String {
         if id.hasPrefix("file_") { return try await FileTokens.open(id) }
+        if id.hasPrefix("rename_") {
+            guard let plan = PendingRenames.take(id) else { throw ToolError("That list has expired; ask again") }
+            return try FileOrganizer.live.apply(plan) + " · say “undo” to reverse"
+        }
         throw ToolError("That item can't be opened")
     }
 
     public static func reset() {
         FileTokens.reset()
+        PendingRenames.reset()
     }
 }

@@ -92,11 +92,22 @@ struct OrganiseFilesTool: AssistantTool {
             guard let newName = arguments.newName else { throw ToolError("What should it be renamed to?") }
             // Rename acts on exactly one file: the only match, or an exact name.
             let exact = found.filter { FileRanking.nameScore($0.name, arguments.files.query.words) == 3 }
-            guard found.count == 1 || exact.count == 1 else {
-                let names = found.prefix(3).map(\.name).joined(separator: ", ")
-                throw ToolError("Which one? I found \(found.count > 20 ? "20+" : "\(found.count)"): \(names). Say more of the name")
+            if found.count == 1 || exact.count == 1 {
+                return try result(of: organizer.planRename((found.count == 1 ? found[0] : exact[0]).url, to: newName), organizer)
             }
-            return try result(of: organizer.planRename((found.count == 1 ? found[0] : exact[0]).url, to: newName), organizer)
+            // Several: let the user pick, with each one's folder shown, rather
+            // than guess ("test.txt" existed in two different projects).
+            let choices = Array((exact.isEmpty ? found : exact).prefix(6))
+            let rows = try choices.map { file in
+                let plan = try organizer.planRename(file.url, to: newName)
+                return ResultItem(
+                    id: PendingRenames.park(plan),
+                    title: file.name,
+                    detail: FileTools.location(of: file.url),
+                    symbol: "doc"
+                )
+            }
+            return ToolResult("Which \(choices[0].name)? Click the one to rename", items: rows)
         case .move, .copy:
             guard let destination = arguments.destination else { throw ToolError("Where to?") }
             let sources = found.map(\.url)

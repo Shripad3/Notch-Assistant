@@ -26,6 +26,29 @@ enum PendingChanges {
     }
 }
 
+/// Rename choices shown when several files share a name. Picking a row
+/// applies that one; the rest are dropped. Cleared with the next command.
+enum PendingRenames {
+    private static let choices = Mutex<[String: FileChangePlan]>([:])
+
+    static func park(_ plan: FileChangePlan) -> String {
+        let token = "rename_" + String(UUID().uuidString.prefix(8)).lowercased()
+        choices.withLock { $0[token] = plan }
+        return token
+    }
+
+    static func take(_ token: String) -> FileChangePlan? {
+        choices.withLock { all in
+            defer { all.removeAll() }
+            return all[token]
+        }
+    }
+
+    static func reset() {
+        choices.withLock { $0.removeAll() }
+    }
+}
+
 /// What the notch's Confirm button and a spoken "yes" do.
 public enum Confirmations {
     public static let yesWords: Set<String> = ["yes", "yeah", "yep", "sure", "confirm", "do it", "go ahead", "ok", "okay", "yes please"]
