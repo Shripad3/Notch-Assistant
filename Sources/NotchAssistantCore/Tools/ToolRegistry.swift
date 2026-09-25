@@ -17,6 +17,8 @@ public struct ToolRegistry: Sendable {
         AnyAssistantTool(OpenURLTool()),
         // Before Spotify and files: "play … on YouTube" and "… video" are its.
         AnyAssistantTool(PlayYouTubeTool()),
+        // Before webSearch: "how's the weather" is answered, not searched.
+        AnyAssistantTool(WeatherTool()),
         AnyAssistantTool(WebSearchTool()),
         AnyAssistantTool(ControlSpotifyTool()),
         AnyAssistantTool(SystemControlTool()),

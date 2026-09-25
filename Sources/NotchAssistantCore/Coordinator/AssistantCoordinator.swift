@@ -204,6 +204,10 @@ public actor AssistantCoordinator {
                 await apply(.needsConfirmation(text, items), session: id)
                 return
             }
+            if outcomes.count == 1, outcomes[0].isAnswer {
+                await apply(.answer(text), session: id)
+                return
+            }
             if outcomes.last?.undoable == true { resultDelay = .seconds(5) }
             await apply(.done(text, items: items), session: id)
         } catch is CancellationError {

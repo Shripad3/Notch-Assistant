@@ -26,12 +26,15 @@ public struct ToolResult: Sendable, Equatable, ExpressibleByStringInterpolation 
     public var confirmation: String?
     /// A file change that "undo" can reverse; its result stays up longer.
     public var undoable: Bool
+    /// An answer to a question (the weather): shown and spoken as a reply.
+    public var isAnswer: Bool
 
-    public init(_ text: String, items: [ResultItem] = [], confirmation: String? = nil, undoable: Bool = false) {
+    public init(_ text: String, items: [ResultItem] = [], confirmation: String? = nil, undoable: Bool = false, isAnswer: Bool = false) {
         self.text = text
         self.items = items
         self.confirmation = confirmation
         self.undoable = undoable
+        self.isAnswer = isAnswer
     }
 
     public init(stringLiteral value: String) {

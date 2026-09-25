@@ -217,6 +217,7 @@ private struct CapabilitiesPane: View {
 
     @AppStorage(SearchEngine.defaultsKey) private var searchEngine = SearchEngine.google.rawValue
     @AppStorage("youtube.autoplay") private var youtubeAutoplay = true
+    @AppStorage(WeatherSettings.cityKey) private var weatherCity = ""
 
     var body: some View {
         Form {
@@ -224,6 +225,13 @@ private struct CapabilitiesPane: View {
                 Section(group.title) {
                     ForEach(group.tools, id: \.name) { ToolToggle(tool: $0) }
                 }
+            }
+            Section {
+                TextField("City", text: $weatherCity, prompt: Text(WeatherSettings.defaultCity))
+            } header: {
+                Text("Weather")
+            } footer: {
+                Text("Used when you don't name a place. Forecasts come from Open-Meteo (free, no account); only the city name is sent.")
             }
             Section {
                 Toggle("Play the first YouTube result automatically", isOn: $youtubeAutoplay)

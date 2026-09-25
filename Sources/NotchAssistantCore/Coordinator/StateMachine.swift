@@ -28,6 +28,8 @@ public enum AssistantEvent: Sendable, Equatable {
     case textOnly(String)
     case done(String, items: [ResultItem] = [])
     case needsConfirmation(String, [ResultItem])
+    /// A tool answered a question: shown and spoken like a reply.
+    case answer(String)
     /// The user picked an item from a list; the outcome of acting on it.
     case selected(String)
     case failure(AssistantFailure)
@@ -57,6 +59,8 @@ public enum StateMachine {
             .reply(text)
         case (.acting, .done(let text, let items)):
             items.isEmpty ? .result(text) : .list(text, items)
+        case (.acting, .answer(let text)):
+            .reply(text)
         case (.acting, .needsConfirmation(let text, let items)):
             .confirm(text, items)
         case (.list, .selected(let text)), (.confirm, .selected(let text)):

@@ -17,7 +17,7 @@ struct WebSearchTool: AssistantTool {
     let name = "webSearch"
     let title = "Search the web"
     let symbol = "magnifyingglass"
-    let keywords: Set<String> = ["search", "google", "look", "what", "who", "how", "when", "why", "weather", "news"]
+    let keywords: Set<String> = ["search", "google", "look", "what", "who", "how", "when", "why", "news"]
     let description = """
         Search the web for information or a question. "search for banana bread recipes" → query "banana bread recipes". \
         Not for opening a website by name.

@@ -65,7 +65,7 @@ struct DirectMatchTests {
     /// Anything not clearly simple must reach the model.
     @Test(arguments: [
         "open again", "open best comics", "Open Arc and play the Mat Armstrong YouTube video",
-        "what's the weather like", "open youtube in some browser i don't have",
+        "open youtube in some browser i don't have",
     ])
     func leftToModel(transcript: String) {
         #expect(plan(transcript) == nil)
