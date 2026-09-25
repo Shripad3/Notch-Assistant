@@ -213,6 +213,7 @@ private struct CapabilitiesPane: View {
     }()
 
     @AppStorage(SearchEngine.defaultsKey) private var searchEngine = SearchEngine.google.rawValue
+    @AppStorage("youtube.autoplay") private var youtubeAutoplay = true
 
     var body: some View {
         Form {
@@ -220,6 +221,13 @@ private struct CapabilitiesPane: View {
                 Section(group.title) {
                     ForEach(group.tools, id: \.name) { ToolToggle(tool: $0) }
                 }
+            }
+            Section {
+                Toggle("Play the first YouTube result automatically", isOn: $youtubeAutoplay)
+            } header: {
+                Text("YouTube")
+            } footer: {
+                Text("Uses Accessibility to press the top video on the results page, skipping Shorts and ads. If it can't, the results page stays open for you to choose.")
             }
             Section {
                 VStack(alignment: .leading, spacing: 6) {

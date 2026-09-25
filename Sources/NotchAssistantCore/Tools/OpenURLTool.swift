@@ -73,6 +73,15 @@ enum Browser {
             .first { Grounding.mentions($0, in: transcript) }
     }
 
+    /// The running browser that `open(_:in:)` used, for Accessibility work
+    /// on the page it opened (YouTube autoplay).
+    static func runningApp(named name: String?) -> NSRunningApplication? {
+        let url = name.flatMap { InstalledApps.resolve($0)?.url }
+            ?? NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!)
+        guard let url else { return nil }
+        return NSWorkspace.shared.runningApplications.first { $0.bundleURL?.standardizedFileURL == url.standardizedFileURL }
+    }
+
     static func open(_ url: URL, in spokenBrowser: String?) async throws -> String? {
         let configuration = NSWorkspace.OpenConfiguration()
         if let spoken = spokenBrowser?.trimmingCharacters(in: .whitespaces), !spoken.isEmpty,

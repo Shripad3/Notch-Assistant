@@ -96,3 +96,32 @@ struct BrowserGroundingTests {
         #expect(CommandContext.$transcript.withValue("open youtube") { Browser.grounded("Safari") } == nil)
     }
 }
+
+struct YouTubeAutoplayRuleTests {
+    @Test(arguments: [
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://www.youtube.com/watch?v=abc123&t=42s",
+        "https://m.youtube.com/watch?v=abc123",
+    ])
+    func videos(url: String) {
+        #expect(YouTubeAutoplay.isVideo(URL(string: url)!))
+    }
+
+    @Test(arguments: [
+        "https://www.youtube.com/shorts/abc123",
+        "https://www.youtube.com/@MatArmstrong",
+        "https://www.youtube.com/playlist?list=PL123",
+        "https://www.youtube.com/watch?list=PL123",
+        "https://www.youtube.com/watch?v=abc&adurl=https://example.com",
+        "https://www.googleadservices.com/pagead/aclk?sa=L",
+        "https://evil.example/watch?v=abc",
+        "https://notyoutube.com/watch?v=abc",
+    ])
+    func notVideos(url: String) {
+        #expect(!YouTubeAutoplay.isVideo(URL(string: url)!))
+    }
+
+    @Test func videoID() {
+        #expect(YouTubeAutoplay.videoID(URL(string: "https://www.youtube.com/watch?v=abc123&t=4")!) == "abc123")
+    }
+}

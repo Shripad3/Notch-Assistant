@@ -11,10 +11,10 @@ struct PlayYouTubeArguments: Sendable {
     var browser: String?
 }
 
-/// Tier 1 of spec §9's playYouTube: opens YouTube's search results, which is
-/// deterministic and needs no permission. The user clicks the video. Tier 2
-/// (auto-clicking the first result through Accessibility) comes in v3 and
-/// will always fall back to this.
+/// spec §9's playYouTube. Tier 1 opens YouTube's search results, which is
+/// deterministic and needs no permission. Tier 2 (`YouTubeAutoplay`) then
+/// presses the first real video through Accessibility, and on any failure
+/// leaves the results page as it is.
 struct PlayYouTubeTool: AssistantTool {
     let name = "playYouTube"
     let title = "YouTube"
@@ -41,9 +41,17 @@ struct PlayYouTubeTool: AssistantTool {
             throw ToolError("What should I look for on YouTube?")
         }
         try Task.checkCancellation()
-        let browser = try await Browser.open(url, in: Browser.grounded(arguments.browser))
+        let spokenBrowser = Browser.grounded(arguments.browser)
+        let browser = try await Browser.open(url, in: spokenBrowser)
+        let place = browser.map { " in \($0)" } ?? ""
+
+        // Tier 2: press the first real video. Any failure keeps Tier 1.
+        if YouTubeAutoplay.isEnabled, let app = Browser.runningApp(named: spokenBrowser),
+           let title = try await YouTubeAutoplay.playFirstResult(in: app) {
+            return ToolResult("Playing “\(title)”" + place)
+        }
         let what = latest ? "latest “\(arguments.query)” videos" : "“\(arguments.query)”"
-        return ToolResult("YouTube results for \(what)" + (browser.map { " in \($0)" } ?? ""))
+        return ToolResult("YouTube results for \(what)" + place)
     }
 
     static let latestWords = ["latest", "newest", "most recent", "new", "recent", "last"]
