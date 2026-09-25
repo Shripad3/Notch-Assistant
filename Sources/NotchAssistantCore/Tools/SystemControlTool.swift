@@ -91,10 +91,10 @@ struct SystemControlTool: AssistantTool {
             try await SystemKeys.adjust(.set(Double(value) / 100))
             return "Brightness \(value)%"
         case "doNotDisturbOn":
-            try await Shortcuts.run(Shortcuts.doNotDisturbOn)
+            try await Shortcuts.setDoNotDisturb(.on)
             return "Do Not Disturb on"
         case "doNotDisturbOff":
-            try await Shortcuts.run(Shortcuts.doNotDisturbOff)
+            try await Shortcuts.setDoNotDisturb(.off)
             return "Do Not Disturb off"
         case "lock":
             // Like sleep: let the notch show the result first.

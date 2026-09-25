@@ -224,9 +224,9 @@ private struct CapabilitiesPane: View {
             Section {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Do Not Disturb runs two shortcuts you create once in the Shortcuts app:")
-                    Text("1. New shortcut named **Alfred: Do Not Disturb On** with one action: *Set Focus* → Do Not Disturb → **On** (until turned off).")
-                    Text("2. New shortcut named **Alfred: Do Not Disturb Off** with *Set Focus* → Do Not Disturb → **Off**.")
-                    Text("The names must match exactly. The first use asks to let Notch Assistant control Shortcuts.")
+                    Text("1. A shortcut named **DND On** with one action: *Set Focus* → Do Not Disturb → **On** (until turned off).")
+                    Text("2. A second one named **DND Off** with *Set Focus* → Do Not Disturb → **Off**.")
+                    Text("Any names work if they contain “DND” or “Do Not Disturb” plus “On” or “Off”. The first use asks to let Notch Assistant control Shortcuts.")
                         .foregroundStyle(.secondary)
                 }
                 .font(.callout)

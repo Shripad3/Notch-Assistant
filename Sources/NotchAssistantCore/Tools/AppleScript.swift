@@ -12,22 +12,34 @@ enum AppleScript {
     private static let queue = DispatchQueue(label: "dev.shripad.NotchAssistant.applescript")
 
     static func run(_ source: String, controlling appName: String) async throws {
+        _ = try await evaluate(source, controlling: appName)
+    }
+
+    /// Runs a script and returns its result as strings: one for a text
+    /// result, each item for a list.
+    static func evaluate(_ source: String, controlling appName: String) async throws -> [String] {
         // Bound each event, so an unresponsive app fails instead of hanging.
         let bounded = "with timeout of 10 seconds\n\(source)\nend timeout"
-        let code: Int? = await withCheckedContinuation { continuation in
+        let (code, values): (Int?, [String]) = await withCheckedContinuation { continuation in
             queue.async {
                 var error: NSDictionary?
                 let script = NSAppleScript(source: bounded)
-                script?.executeAndReturnError(&error)
+                let result = script?.executeAndReturnError(&error)
                 if let error {
                     Log.tools.error("AppleScript for \(appName, privacy: .public) failed: \(String(describing: error), privacy: .public)")
                 }
-                continuation.resume(returning: script == nil ? -1 : error.map { $0[NSAppleScript.errorNumber] as? Int ?? 0 })
+                var values: [String] = []
+                if let result, result.numberOfItems > 0 {
+                    values = (1...result.numberOfItems).compactMap { result.atIndex($0)?.stringValue }
+                } else if let text = result?.stringValue {
+                    values = [text]
+                }
+                continuation.resume(returning: (script == nil ? -1 : error.map { $0[NSAppleScript.errorNumber] as? Int ?? 0 }, values))
             }
         }
         switch code {
         case nil:
-            return
+            return values
         case -1743:
             throw AssistantFailure("Notch Assistant isn't allowed to control \(appName)", link: .automation)
         case -1712:

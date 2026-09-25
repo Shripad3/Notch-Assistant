@@ -84,17 +84,35 @@ enum SystemKeys {
 /// the "Shortcuts Events" helper (Apple Events, not a shell). Used for Do Not
 /// Disturb, which has no key event and no public API.
 enum Shortcuts {
-    static let doNotDisturbOn = "Alfred: Do Not Disturb On"
-    static let doNotDisturbOff = "Alfred: Do Not Disturb Off"
+    enum Switch { case on, off }
 
-    static func run(_ name: String) async throws {
-        do {
-            try await AppleScript.run(
-                "tell application id \"com.apple.shortcuts.events\" to run the shortcut named \(AppleScript.quoted(name))",
-                controlling: "Shortcuts"
-            )
-        } catch let error as ToolError where error.message.contains("didn't accept") {
-            throw ToolError("I need a shortcut named “\(name)”. See Settings › Capabilities")
+    /// Finds the user's Do Not Disturb shortcut by name ("DND On", "Do Not
+    /// Disturb Off", …) rather than demanding an exact name, then runs it.
+    static func setDoNotDisturb(_ state: Switch) async throws {
+        let names = try await AppleScript.evaluate(
+            "tell application id \"com.apple.shortcuts.events\" to get name of every shortcut",
+            controlling: "Shortcuts"
+        )
+        guard let name = doNotDisturbShortcut(state, among: names) else {
+            let example = state == .on ? "DND On" : "DND Off"
+            throw ToolError("I need a shortcut called something like “\(example)”. See Settings › Capabilities")
+        }
+        try await AppleScript.run(
+            "tell application id \"com.apple.shortcuts.events\" to run the shortcut named \(AppleScript.quoted(name))",
+            controlling: "Shortcuts"
+        )
+    }
+
+    /// A name that mentions Do Not Disturb (or DND) and the wanted state as a
+    /// whole word. Pure, for testing.
+    static func doNotDisturbShortcut(_ state: Switch, among names: [String]) -> String? {
+        let wanted = state == .on ? "on" : "off"
+        let other = state == .on ? "off" : "on"
+        return names.first { name in
+            let words = AppNameMatcher.normalize(name).split(separator: " ").map(String.init)
+            let joined = " " + words.joined(separator: " ") + " "
+            let isDoNotDisturb = joined.contains(" do not disturb ") || words.contains("dnd")
+            return isDoNotDisturb && words.contains(wanted) && !words.contains(other)
         }
     }
 }

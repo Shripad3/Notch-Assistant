@@ -112,3 +112,21 @@ struct BrightnessLockFocusTests {
         }
     }
 }
+
+struct DoNotDisturbShortcutTests {
+    let names = ["Morning routine", "DND On", "DND Off", "Alfred: Do Not Disturb On", "Turn Do Not Disturb off"]
+
+    @Test func findsOnAndOff() {
+        #expect(Shortcuts.doNotDisturbShortcut(.on, among: names) == "DND On")
+        #expect(Shortcuts.doNotDisturbShortcut(.off, among: names) == "DND Off")
+    }
+
+    @Test func longerNamesWork() {
+        #expect(Shortcuts.doNotDisturbShortcut(.on, among: ["Alfred: Do Not Disturb On"]) == "Alfred: Do Not Disturb On")
+        #expect(Shortcuts.doNotDisturbShortcut(.off, among: ["Turn Do Not Disturb off"]) == "Turn Do Not Disturb off")
+    }
+
+    @Test func ignoresUnrelatedOrAmbiguous() {
+        #expect(Shortcuts.doNotDisturbShortcut(.on, among: ["Turn on the lights", "DND on or off", "Morning"]) == nil)
+    }
+}
