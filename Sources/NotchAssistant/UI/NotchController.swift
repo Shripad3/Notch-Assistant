@@ -103,7 +103,7 @@ final class NotchController: NotchPresenter {
 
         if let screen = display.targetScreen {
             let mode: Mode = switch status.state {
-            case .result, .reply, .list, .error: .expanded
+            case .result, .reply, .list, .confirm, .error: .expanded
             default: notch.isHovering ? .expanded : .compact
             }
             return Presentation(mode: mode, displayID: screen.displayID)

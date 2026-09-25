@@ -5,7 +5,7 @@ import SwiftUI
 
 /// The panes, in sidebar order.
 private enum SettingsPane: String, CaseIterable, Identifiable {
-    case activation, model, capabilities, spotify, permissions, display
+    case activation, model, capabilities, files, spotify, permissions, display
 
     var id: Self { self }
 
@@ -14,6 +14,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .activation: "Activation"
         case .model: "Model & Voice"
         case .capabilities: "Capabilities"
+        case .files: "Files"
         case .spotify: "Spotify"
         case .permissions: "Permissions"
         case .display: "Display"
@@ -25,6 +26,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .activation: "ear"
         case .model: "cpu"
         case .capabilities: "square.grid.2x2"
+        case .files: "folder"
         case .spotify: "music.note"
         case .permissions: "lock.shield"
         case .display: "display"
@@ -58,6 +60,7 @@ struct SettingsView: View {
         case .activation: ActivationPane(status: status)
         case .model: ModelPane()
         case .capabilities: CapabilitiesPane()
+        case .files: FilesPane()
         case .spotify: SpotifyPane()
         case .permissions: PermissionsPane()
         case .display: DisplayPane()
@@ -288,6 +291,70 @@ private struct ToolToggle: View {
         case .varies: parts.append("May need permissions")
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+// MARK: - Files
+
+/// Spec §10's Files pane: where file tools may act, the limits, what the
+/// agent can never do (stated, not a toggle), and the undo history.
+private struct FilesPane: View {
+    @State private var history: [FileJournal.Entry] = []
+    @State private var message: String?
+
+    var body: some View {
+        Form {
+            Section {
+                Text("Notch Assistant can't read what's inside your files, can't edit them, and can't delete anything permanently. “Delete” moves to the Trash, and it never empties the Trash.")
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Section("Where it can act") {
+                ForEach(["Documents", "Downloads", "Desktop"], id: \.self) { name in
+                    Label(name, systemImage: "folder")
+                }
+                Text("Hidden files, apps and Library folders are never touched. One file changes at once; 2–20 files ask for a confirmation; more than 20 are refused. Existing files are never overwritten; a number is added to the new name instead.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                if history.isEmpty {
+                    Text("No changes yet").foregroundStyle(.secondary)
+                }
+                ForEach(history.prefix(30)) { entry in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.summary)
+                                .strikethrough(entry.status == .undone)
+                            Text(entry.date, format: .relative(presentation: .named))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if entry.status == .undone {
+                            Text("Undone").font(.caption).foregroundStyle(.secondary)
+                        } else if !entry.steps.isEmpty {
+                            Button("Undo") { undo(entry) }.controlSize(.small)
+                        }
+                    }
+                }
+                if let message {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Recent changes")
+            } footer: {
+                Text("Say “Alfred, undo that” to reverse the latest one.")
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { history = FileChanges.history }
+    }
+
+    private func undo(_ entry: FileJournal.Entry) {
+        do {
+            message = try FileChanges.undo(entry.id)
+        } catch {
+            message = AssistantFailure(error).message
+        }
+        history = FileChanges.history
     }
 }
 

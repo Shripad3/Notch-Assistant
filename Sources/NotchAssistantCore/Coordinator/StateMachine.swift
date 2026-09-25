@@ -12,6 +12,8 @@ public enum AssistantState: Sendable, Equatable {
     /// A Result with items to choose from (found files). Selecting one goes
     /// back through the coordinator.
     case list(String, [ResultItem])
+    /// A change waiting for yes or no (a batch of files).
+    case confirm(String, [ResultItem])
     case error(AssistantFailure)
 }
 
@@ -25,6 +27,7 @@ public enum AssistantEvent: Sendable, Equatable {
     case toolCall(ToolLabel, target: String)
     case textOnly(String)
     case done(String, items: [ResultItem] = [])
+    case needsConfirmation(String, [ResultItem])
     /// The user picked an item from a list; the outcome of acting on it.
     case selected(String)
     case failure(AssistantFailure)
@@ -54,15 +57,21 @@ public enum StateMachine {
             .reply(text)
         case (.acting, .done(let text, let items)):
             items.isEmpty ? .result(text) : .list(text, items)
-        case (.list, .selected(let text)):
+        case (.acting, .needsConfirmation(let text, let items)):
+            .confirm(text, items)
+        case (.list, .selected(let text)), (.confirm, .selected(let text)):
             .result(text)
+        case (.confirm, .activation):
+            // Answering by voice: "Alfred, yes".
+            .listening(partial: "")
         case (.idle, .failure(let failure)),
              (.listening, .failure(let failure)),
              (.thinking, .failure(let failure)),
              (.acting, .failure(let failure)),
-             (.list, .failure(let failure)):
+             (.list, .failure(let failure)),
+             (.confirm, .failure(let failure)):
             .error(failure)
-        case (.result, .dismiss), (.reply, .dismiss), (.list, .dismiss), (.error, .dismiss):
+        case (.result, .dismiss), (.reply, .dismiss), (.list, .dismiss), (.confirm, .dismiss), (.error, .dismiss):
             .idle
         case (.idle, .cancel):
             nil

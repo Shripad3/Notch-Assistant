@@ -4,6 +4,9 @@ import Foundation
 /// they run.
 enum CommandContext {
     @TaskLocal static var transcript: String?
+    /// False for steps followed by others: a step with a side effect only
+    /// suitable at the end (opening a single found file) skips it.
+    @TaskLocal static var isFinalStep = true
 }
 
 /// Checks that a model-supplied value actually came from what the user said.

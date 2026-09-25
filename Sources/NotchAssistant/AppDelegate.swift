@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.updateWakeWord()
         }
         status.onSelect = { id in Task { await coordinator.select(id) } }
+        status.onConfirm = { confirmed in Task { await coordinator.resolveConfirmation(confirmed) } }
         // The display fallback setting lives in UserDefaults.
         defaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: nil, queue: .main

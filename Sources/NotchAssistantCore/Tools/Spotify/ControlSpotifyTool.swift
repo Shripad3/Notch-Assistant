@@ -19,6 +19,7 @@ struct ControlSpotifyTool: AssistantTool {
     let name = "controlSpotify"
     let title = "Spotify"
     let symbol = "music.note"
+    let keywords: Set<String> = ["play", "music", "song", "songs", "spotify", "pause", "resume", "skip", "next", "previous", "playlist", "album", "track", "listen"]
     let description = """
         Control music in the Spotify app. "play some music" → action "play". "skip this song" → action "next". \
         "play Bohemian Rhapsody" → action "playSong", query "Bohemian Rhapsody". \

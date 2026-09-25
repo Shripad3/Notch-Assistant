@@ -23,6 +23,8 @@ public struct ToolRegistry: Sendable {
         // After openApp and openURL: "open spotify" must stay an app.
         AnyAssistantTool(OpenFileTool()),
         AnyAssistantTool(FindFilesTool()),
+        AnyAssistantTool(OrganiseFilesTool()),
+        AnyAssistantTool(UndoFileChangeTool()),
     ])
 
     public func enabledTools() -> [AnyAssistantTool] {

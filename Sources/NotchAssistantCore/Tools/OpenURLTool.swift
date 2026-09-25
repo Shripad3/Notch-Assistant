@@ -13,6 +13,7 @@ struct OpenURLTool: AssistantTool {
     let name = "openURL"
     let title = "Open website"
     let symbol = "globe"
+    let keywords: Set<String> = ["open", "go", "website", "site", "com", "org", "www", "page", "visit", "browser"]
     let description = """
         Open a website in a browser. "open YouTube" or "go to YouTube" → url "https://www.youtube.com". \
         "open YouTube in Arc" → url "https://www.youtube.com", browser "Arc"; no openApp step. \

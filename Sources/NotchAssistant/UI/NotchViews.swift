@@ -50,6 +50,19 @@ struct NotchExpandedView: View {
             if case .list(_, let items) = status.state {
                 ResultList(items: items) { status.onSelect?($0) }
             }
+            if case .confirm(_, let items) = status.state {
+                ResultList(items: items, select: nil)
+                HStack {
+                    Text("Or say “Alfred, yes” / “no”")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Cancel") { status.onConfirm?(false) }
+                    Button("Confirm") { status.onConfirm?(true) }
+                        .keyboardShortcut(.defaultAction)
+                }
+                .controlSize(.small)
+            }
         }
         .frame(width: 380)
         .foregroundStyle(.primary)
@@ -101,7 +114,7 @@ struct NotchExpandedView: View {
         case .listening: "Listening"
         case .thinking: "Thinking"
         case .acting(let tool, _): tool.title
-        case .result(let outcome), .reply(let outcome), .list(let outcome, _): outcome
+        case .result(let outcome), .reply(let outcome), .list(let outcome, _), .confirm(let outcome, _): outcome
         case .error(let failure): failure.message
         }
     }
@@ -135,6 +148,8 @@ struct StateGlyph: View {
             Image(systemName: "text.bubble.fill").foregroundStyle(.white)
         case .list:
             Image(systemName: "list.bullet").foregroundStyle(.white)
+        case .confirm:
+            Image(systemName: "questionmark.circle.fill").foregroundStyle(.yellow)
         case .error:
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
         }
@@ -145,12 +160,13 @@ struct StateGlyph: View {
 /// coordinator, which opens it through the executor.
 struct ResultList: View {
     let items: [ResultItem]
-    let select: (String) -> Void
+    /// Nil shows the rows without making them clickable (a confirmation).
+    let select: ((String) -> Void)?
 
     var body: some View {
         VStack(spacing: 2) {
             ForEach(items) { item in
-                ResultRow(item: item) { select(item.id) }
+                ResultRow(item: item, action: select.map { select in { select(item.id) } })
             }
         }
     }
@@ -158,11 +174,11 @@ struct ResultList: View {
 
 private struct ResultRow: View {
     let item: ResultItem
-    let action: () -> Void
+    let action: (() -> Void)?
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: action) {
+        Button(action: action ?? {}) {
             HStack(spacing: 10) {
                 Image(systemName: item.symbol)
                     .font(.system(size: 13))
@@ -180,10 +196,11 @@ private struct ResultRow: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
-            .background(isHovered ? Color.white.opacity(0.12) : .clear, in: .rect(cornerRadius: 6))
+            .background(isHovered && action != nil ? Color.white.opacity(0.12) : .clear, in: .rect(cornerRadius: 6))
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .disabled(action == nil)
         .onHover { isHovered = $0 }
     }
 }

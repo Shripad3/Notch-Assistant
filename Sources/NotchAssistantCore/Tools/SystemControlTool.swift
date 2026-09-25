@@ -21,6 +21,7 @@ struct SystemControlTool: AssistantTool {
     let name = "systemControl"
     let title = "System"
     let symbol = "slider.horizontal.3"
+    let keywords: Set<String> = ["volume", "sound", "mute", "unmute", "louder", "quieter", "loud", "quiet", "brightness", "brighter", "dim", "dimmer", "darker", "screen", "lock", "sleep", "disturb", "dnd", "focus"]
     let description = """
         Change this Mac's volume or screen brightness, turn Do Not Disturb on or off, lock the screen, or sleep. \
         "turn it down" → action "volumeDown". "set the volume to 30" → action "setVolume", value 30. \

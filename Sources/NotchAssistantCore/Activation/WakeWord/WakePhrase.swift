@@ -37,6 +37,7 @@ public enum WakePhrase {
         "open", "play", "search", "go", "look", "launch", "start", "google", "watch", "show", "find", "where", "list",
         "turn", "set", "mute", "unmute", "lock", "volume", "brightness", "brighter", "dimmer", "pause", "stop", "skip",
         "next", "previous", "resume", "put", "make", "enable", "disable", "do",
+        "rename", "move", "copy", "trash", "delete", "remove", "create", "undo", "throw", "get", "revert",
     ]
 
     /// For a detection already confirmed by the recognizer: the command

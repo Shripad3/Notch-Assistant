@@ -17,6 +17,11 @@ public actor AssistantCoordinator {
     private var isSuspended = false
     /// The wake-word detection that started this session, if hands-free.
     private var wake: WakeContext?
+    /// A batch of file changes waiting for yes or no.
+    private var pendingConfirmation: String?
+    /// How long the next result stays up; longer for undoable file changes.
+    private var resultDelay: Duration = .seconds(3)
+    private static let undoLabel = ToolLabel(name: "organiseFiles", title: "Files", symbol: "folder")
     private var work: Task<Void, Never>?
     private var dismissal: Task<Void, Never>?
 
@@ -51,7 +56,14 @@ public actor AssistantCoordinator {
 
     /// Arbitration (spec §6): accepted only when Idle, with a 1 s debounce.
     public func activationBegan(wake: WakeContext? = nil) async {
-        guard state == .idle, !isSuspended else { return }
+        // Idle, or answering a pending confirmation by voice.
+        var answering = false
+        if case .confirm = state { answering = true }
+        guard state == .idle || answering, !isSuspended else { return }
+        if !answering {
+            pendingConfirmation = nil
+            Confirmations.discard()
+        }
         let now = ContinuousClock.now
         if let lastTrigger, lastTrigger.duration(to: now) < .seconds(1) { return }
         lastTrigger = now
@@ -94,9 +106,30 @@ public actor AssistantCoordinator {
         }
     }
 
+    /// The notch's Confirm or Cancel button for a pending batch.
+    public func resolveConfirmation(_ confirmed: Bool) async {
+        guard case .confirm = state, let token = pendingConfirmation else { return }
+        pendingConfirmation = nil
+        let id = session
+        guard confirmed else {
+            Confirmations.discard()
+            await apply(.cancel, session: id)
+            return
+        }
+        dismissal?.cancel()
+        do {
+            resultDelay = .seconds(5)
+            await apply(.selected(try await Confirmations.confirm(token)), session: id)
+        } catch {
+            await apply(.failure(AssistantFailure(error)), session: id)
+        }
+    }
+
     /// Escape: back to Idle from any non-idle state, aborting in-flight work.
     public func cancel() async {
         guard state != .idle else { return }
+        pendingConfirmation = nil
+        Confirmations.discard()
         work?.cancel()
         work = nil
         await transcription.cancel()
@@ -125,6 +158,29 @@ public actor AssistantCoordinator {
         }
         await apply(.endpoint(transcript), session: id)
 
+        // A pending batch: "yes" applies it, "no" drops it, anything else is
+        // a new command and the batch is dropped.
+        if let token = pendingConfirmation {
+            pendingConfirmation = nil
+            switch Confirmations.answer(in: transcript) {
+            case true?:
+                await apply(.toolCall(Self.undoLabel, target: "Confirmed"), session: id)
+                do {
+                    resultDelay = .seconds(5)
+                    await apply(.done(try await Confirmations.confirm(token)), session: id)
+                } catch {
+                    await apply(.failure(AssistantFailure(error)), session: id)
+                }
+                return
+            case false?:
+                Confirmations.discard()
+                await apply(.textOnly("Cancelled. Nothing was changed."), session: id)
+                return
+            case nil:
+                Confirmations.discard()
+            }
+        }
+
         do {
             let plan = try await engine.plan(for: transcript, tools: registry.enabledTools())
             if plan.steps.isEmpty, let reply = plan.reply {
@@ -135,14 +191,21 @@ public actor AssistantCoordinator {
                 throw AssistantFailure("I can't do that yet")
             }
             var outcomes: [ToolResult] = []
-            for step in plan.steps {
+            for (index, step) in plan.steps.enumerated() {
                 try Task.checkCancellation()
                 await apply(.toolCall(step.tool.label, target: step.target()), session: id)
                 // A throwing step leaves the remaining steps unexecuted (spec §8).
-                outcomes.append(try await step.execute())
+                outcomes.append(try await step.execute(isFinal: index == plan.steps.count - 1))
             }
             let items = outcomes.last?.items ?? []
-            await apply(.done(outcomes.map(\.text).joined(separator: " · "), items: items), session: id)
+            let text = outcomes.map(\.text).joined(separator: " · ")
+            if let token = outcomes.last?.confirmation {
+                pendingConfirmation = token
+                await apply(.needsConfirmation(text, items), session: id)
+                return
+            }
+            if outcomes.last?.undoable == true { resultDelay = .seconds(5) }
+            await apply(.done(text, items: items), session: id)
         } catch is CancellationError {
             // cancel() already returned to Idle.
         } catch {
@@ -181,11 +244,23 @@ public actor AssistantCoordinator {
         await presenter.render(next)
     }
 
+    private func dismiss(session id: Int) async {
+        if case .confirm = state, id == session {
+            // Unanswered: the batch is dropped, nothing changes.
+            pendingConfirmation = nil
+            Confirmations.discard()
+        }
+        await apply(.dismiss, session: id)
+    }
+
     private func scheduleDismissal(after state: AssistantState, session id: Int) {
         dismissal?.cancel()
         let delay: Duration
         switch state {
-        case .result: delay = .seconds(3)
+        case .result:
+            delay = resultDelay
+            resultDelay = .seconds(3)
+        case .confirm: delay = .seconds(20)
         case .reply: delay = .seconds(4)
         case .list: delay = .seconds(10)
         case .error: delay = .seconds(5)
@@ -194,7 +269,7 @@ public actor AssistantCoordinator {
         dismissal = Task {
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
-            await self.apply(.dismiss, session: id)
+            await self.dismiss(session: id)
         }
     }
 }

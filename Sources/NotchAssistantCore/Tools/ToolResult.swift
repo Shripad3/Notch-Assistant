@@ -22,10 +22,16 @@ public struct ResultItem: Sendable, Equatable, Identifiable {
 public struct ToolResult: Sendable, Equatable, ExpressibleByStringInterpolation {
     public var text: String
     public var items: [ResultItem]
+    /// Set when the change waits for the user's yes (a batch of files).
+    public var confirmation: String?
+    /// A file change that "undo" can reverse; its result stays up longer.
+    public var undoable: Bool
 
-    public init(_ text: String, items: [ResultItem] = []) {
+    public init(_ text: String, items: [ResultItem] = [], confirmation: String? = nil, undoable: Bool = false) {
         self.text = text
         self.items = items
+        self.confirmation = confirmation
+        self.undoable = undoable
     }
 
     public init(stringLiteral value: String) {

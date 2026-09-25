@@ -5,7 +5,7 @@ enum Prompt {
         You turn one spoken command into steps for a Mac assistant. \
         Each step uses one of the provided tools. List steps in the order they should run, one step per action. \
         Copy names from the command as spoken. \
-        If the command asks for something no tool does, such as deleting files or running commands, \
+        If the command asks for something no tool does, such as running commands or reading a file's contents, \
         return an empty steps list. Do not open a related app instead. Never invent a tool.
         """
 }

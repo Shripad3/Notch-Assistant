@@ -58,6 +58,7 @@ struct OpenFileTool: AssistantTool {
     let name = "openFile"
     let title = "Open file"
     let symbol = "doc"
+    let keywords: Set<String> = ["open", "file", "files", "document", "pdf", "my", "show", "screenshot", "photo", "presentation"]
     let description = """
         Open a file on this Mac, found by its name, type and date, never by what is inside it. \
         "open my invoice from last month" → name "invoice", period "lastMonth". \
@@ -81,13 +82,20 @@ struct OpenFileTool: AssistantTool {
         return ToolResult(others > 0 ? "\(opened) · \(others) other match\(others == 1 ? "" : "es")" : opened)
     }
 
+    static let extensions: Set<String> = ["pdf", "doc", "docx", "pages", "key", "pptx", "ppt", "xls", "xlsx", "numbers", "csv", "txt", "md", "rtf", "png", "jpg", "jpeg", "heic", "mov", "mp4", "mp3", "m4a", "zip"]
+
     func directArguments(for command: DirectCommand) -> FileRequestArguments? {
         if command.verb == "open" {
             return FileQuery(spoken: command.rest).map(FileRequestArguments.init)
         }
         // A bare name with a file type ("Foundations of process mining
         // introduction.PDF") means open it; the model chose findFiles.
-        guard command.verb.isEmpty,
+        let words = command.text.split(separator: " ").map(String.init)
+        guard command.verb.isEmpty, let first = words.first, let last = words.last,
+              !WakePhrase.commandStarts.contains(first),
+              // Only a name ending in an extension ("…introduction.PDF"), not
+              // sentences that mention a kind ("…bin that old spreadsheet").
+              Self.extensions.contains(last), words.count <= 10,
               !FindFilesTool.prefixes.contains(where: { command.text.hasPrefix($0 + " ") }),
               let query = FileQuery(spoken: command.text), query.kind != nil, !query.words.isEmpty
         else { return nil }
@@ -101,6 +109,7 @@ struct FindFilesTool: AssistantTool {
     let name = "findFiles"
     let title = "Find files"
     let symbol = "magnifyingglass.circle"
+    let keywords: Set<String> = ["find", "where", "list", "show", "files", "documents", "screenshots", "photos"]
     let description = """
         Find files on this Mac by name, type and date, never by contents, and list them. \
         "find my tax documents from last year" → name "tax", kind "document", period "lastYear".
@@ -120,7 +129,7 @@ struct FindFilesTool: AssistantTool {
         guard !found.isEmpty else { throw FileTools.notFound(arguments) }
         // One match: nothing to choose, so open it (a one-row list is just an
         // extra click). Lists are for choosing between several.
-        if found.count == 1 {
+        if found.count == 1, CommandContext.isFinalStep {
             return ToolResult(try await FileTools.open(found[0]))
         }
         let shown = Array(found.prefix(Self.limit))
@@ -148,7 +157,7 @@ enum FileTools {
         return "Opened \(file.name)"
     }
 
-    private static let contentWords: Set<String> = ["mentions", "mentioning", "contains", "containing", "inside", "says", "saying", "about"]
+    private static let contentWords: Set<String> = ["mentions", "mentioning", "contains", "containing", "inside", "says", "saying", "about", "read"]
 
     /// The agent never reads file contents (spec §9). A request that depends
     /// on them is declined plainly, rather than guessed at by name.

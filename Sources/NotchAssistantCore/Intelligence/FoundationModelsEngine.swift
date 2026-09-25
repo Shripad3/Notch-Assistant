@@ -25,7 +25,7 @@ public struct FoundationModelsEngine: AssistantEngine {
     public func plan(for transcript: String, tools: [AnyAssistantTool]) async throws -> Plan {
         if let reason = unavailableReason() { throw reason }
         let transcript = Self.clean(transcript)
-        if let reply = SmallTalk.reply(to: transcript) {
+        if let reply = SmallTalk.reply(to: transcript) ?? ContentRequests.refusal(for: transcript) {
             return Plan(steps: [], isDirect: true, reply: reply)
         }
         guard !tools.isEmpty else { return Plan(steps: []) }
@@ -34,6 +34,8 @@ public struct FoundationModelsEngine: AssistantEngine {
             return plan
         }
 
+        let tools = ToolRouter.relevant(for: transcript, among: tools)
+        Log.intelligence.notice("model sees: \(tools.map(\.name).joined(separator: ", "), privacy: .public)")
         let schema = try PlanSchema.make(for: tools)
         let content: GeneratedContent
         do {

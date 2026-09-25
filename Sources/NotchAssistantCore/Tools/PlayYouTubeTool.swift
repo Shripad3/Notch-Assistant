@@ -19,6 +19,7 @@ struct PlayYouTubeTool: AssistantTool {
     let name = "playYouTube"
     let title = "YouTube"
     let symbol = "play.rectangle"
+    let keywords: Set<String> = ["youtube", "video", "videos", "watch", "channel", "clip"]
     let description = """
         Find videos on YouTube. "play the Mat Armstrong video on YouTube" → query "Mat Armstrong". \
         "Mat Armstrong's latest video on YouTube in Arc" → query "Mat Armstrong", latest true, browser "Arc"; no openApp step. \

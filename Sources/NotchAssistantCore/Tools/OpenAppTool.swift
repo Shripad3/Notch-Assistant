@@ -11,6 +11,7 @@ struct OpenAppTool: AssistantTool {
     let name = "openApp"
     let title = "Open app"
     let symbol = "app.badge"
+    let keywords: Set<String> = ["open", "launch", "start", "app", "application", "browser"]
     let description = """
         Launch an installed Mac app by name. "open Spotify" → appName "Spotify". \
         "open my browser" → appName "my browser", exactly as said. \

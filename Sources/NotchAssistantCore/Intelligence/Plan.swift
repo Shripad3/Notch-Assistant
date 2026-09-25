@@ -10,9 +10,11 @@ public struct PlannedStep: Sendable {
         (try? tool.target(of: arguments)) ?? ""
     }
 
-    public func execute() async throws -> ToolResult {
+    public func execute(isFinal: Bool = true) async throws -> ToolResult {
         try await CommandContext.$transcript.withValue(transcript) {
-            try await tool.execute(arguments)
+            try await CommandContext.$isFinalStep.withValue(isFinal) {
+                try await tool.execute(arguments)
+            }
         }
     }
 }

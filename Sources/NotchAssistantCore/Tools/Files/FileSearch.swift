@@ -13,6 +13,8 @@ struct FileQuery: Sendable, Equatable {
     private static let stopWords: Set<String> = [
         "my", "the", "a", "an", "file", "files", "from", "of", "that", "this", "latest", "recent", "last",
         "called", "named", "list", "all", "every", "in", "on", "at", "folder", "s", "show", "me", "any",
+        // "Everything in Downloads" is every file there, not one named "everything".
+        "everything", "anything", "stuff", "things",
     ]
 
     /// Spoken folder names → scoped root folder names.
@@ -28,11 +30,14 @@ struct FileQuery: Sendable, Equatable {
         self.folder = folder
     }
 
-    /// From the model's free-text query, e.g. "tax invoice".
+    /// From the model's free-text query, e.g. "tax invoice". With a kind,
+    /// words naming that kind are dropped: "screenshots" would not match
+    /// files called "Screenshot …".
     init(text: String, kind: FileKind?, period: FilePeriod?, folder: String? = nil) {
         self.init(
             words: AppNameMatcher.normalize(text).split(separator: " ").map(String.init)
-                .filter { $0.count >= 2 && !Self.stopWords.contains($0) },
+                .filter { $0.count >= 2 && !Self.stopWords.contains($0) }
+                .filter { kind == nil || FileKind(spokenWord: $0) != kind },
             kind: kind,
             period: period,
             folder: folder

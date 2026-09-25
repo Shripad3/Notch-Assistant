@@ -36,6 +36,8 @@ final class StatusModel {
     var wakeStatus: WakeStatus = .off
     /// A row of a result list was clicked; its opaque id goes to the coordinator.
     @ObservationIgnored var onSelect: ((String) -> Void)?
+    /// The Confirm (true) or Cancel (false) button for a batch of changes.
+    @ObservationIgnored var onConfirm: ((Bool) -> Void)?
 
     func receive(level newLevel: Float) {
         // Rise instantly, fall gently, so the bars don't flicker.
@@ -56,6 +58,7 @@ final class StatusModel {
         case .result: "checkmark.circle.fill"
         case .reply: "text.bubble.fill"
         case .list: "list.bullet"
+        case .confirm: "questionmark.circle.fill"
         case .error: "exclamationmark.triangle.fill"
         }
     }
@@ -68,7 +71,7 @@ final class StatusModel {
         case .listening(let partial): partial.isEmpty ? "Listening…" : "“\(partial)”"
         case .thinking(let transcript): "Thinking: “\(transcript)”"
         case .acting(let tool, let target): "\(tool.title): \(target)"
-        case .result(let outcome), .reply(let outcome), .list(let outcome, _): outcome
+        case .result(let outcome), .reply(let outcome), .list(let outcome, _), .confirm(let outcome, _): outcome
         case .error(let failure): failure.message
         }
     }

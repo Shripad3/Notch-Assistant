@@ -24,6 +24,9 @@ protocol AssistantTool: Sendable {
     var symbol: String { get }
     /// Written for the model, not a human: concrete, with an example phrasing.
     var description: String { get }
+    /// Words that suggest this tool. Only the few most relevant tools are
+    /// shown to the model for each command (`ToolRouter`).
+    var keywords: Set<String> { get }
     var requiresNetwork: Bool { get }
     var permission: ToolPermission { get }
     var reversibility: Reversibility { get }
@@ -69,6 +72,7 @@ public struct AnyAssistantTool: Sendable {
     public let name: String
     public let label: ToolLabel
     public let description: String
+    public let keywords: Set<String>
     public let requiresNetwork: Bool
     public let permission: ToolPermission
     public let reversibility: Reversibility
@@ -81,6 +85,7 @@ public struct AnyAssistantTool: Sendable {
         name = tool.name
         label = ToolLabel(name: tool.name, title: tool.title, symbol: tool.symbol)
         description = tool.description
+        keywords = tool.keywords
         requiresNetwork = tool.requiresNetwork
         permission = tool.permission
         reversibility = tool.reversibility
