@@ -54,7 +54,7 @@ struct SystemControlTool: AssistantTool {
     /// you", the model turned the volume down.
     private static let groundingWords: Set<String> = [
         "volume", "sound", "audio", "mute", "unmute", "louder", "quieter", "loud", "quiet", "turn", "sleep", "speakers",
-        "brightness", "bright", "brighter", "dim", "dimmer", "darker", "screen", "display", "disturb", "focus", "lock",
+        "brightness", "bright", "brighter", "dim", "dimmer", "darker", "screen", "display", "disturb", "focus", "lock", "dnd",
     ]
 
     func execute(_ arguments: SystemControlArguments) async throws -> ToolResult {
@@ -117,7 +117,10 @@ struct SystemControlTool: AssistantTool {
     }
 
     func directArguments(for command: DirectCommand) -> SystemControlArguments? {
-        let text = command.text
+        // "DND" is how people say Do Not Disturb.
+        let text = (" " + command.text + " ")
+            .replacingOccurrences(of: " dnd ", with: " do not disturb ")
+            .trimmingCharacters(in: .whitespaces)
         switch text {
         case "mute", "mute the sound", "mute sound", "mute the volume", "mute audio":
             return .init(action: "mute", value: nil)

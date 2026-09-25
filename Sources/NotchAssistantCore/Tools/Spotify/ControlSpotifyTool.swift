@@ -40,7 +40,18 @@ struct ControlSpotifyTool: AssistantTool {
         }
     }
 
+    /// Something musical must have been said. Given "turn on DND", the model
+    /// chose Spotify play (query "DND"), launched Spotify and started music.
+    private static let groundingWords: Set<String> = [
+        "play", "music", "song", "songs", "spotify", "pause", "resume", "skip", "next", "previous", "track",
+        "playlist", "album", "artist", "stop", "listen", "put",
+    ]
+
     func execute(_ arguments: ControlSpotifyArguments) async throws -> ToolResult {
+        if let transcript = CommandContext.transcript,
+           !AppNameMatcher.normalize(transcript).split(separator: " ").contains(where: { Self.groundingWords.contains(String($0)) }) {
+            throw ToolError("I didn't catch what to do")
+        }
         guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.bundleIdentifier) != nil else {
             throw ToolError("Spotify isn't installed")
         }

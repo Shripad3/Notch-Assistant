@@ -130,3 +130,23 @@ struct DoNotDisturbShortcutTests {
         #expect(Shortcuts.doNotDisturbShortcut(.on, among: ["Turn on the lights", "DND on or off", "Morning"]) == nil)
     }
 }
+
+struct DNDAndSpotifyGroundingTests {
+    let tools = ToolRegistry(tools: ToolRegistry.standard.tools, isEnabled: { _ in true }).enabledTools()
+
+    @Test(arguments: [("turn on DND", "doNotDisturbOn"), ("DND off", "doNotDisturbOff"), ("enable dnd", "doNotDisturbOn")])
+    func dndPhrases(transcript: String, action: String) {
+        let step = DirectMatcher.plan(for: transcript, tools: tools)?.steps.first
+        #expect(step?.tool.name == "systemControl")
+        #expect((try? step?.arguments.value(String.self, forProperty: "action")) == action)
+    }
+
+    /// The model's mistake from the log: Spotify "play DND" for "turn on DND".
+    @Test func spotifyNeedsMusicWords() async {
+        await #expect(throws: ToolError.self) {
+            try await CommandContext.$transcript.withValue("turn on DND") {
+                try await ControlSpotifyTool().execute(ControlSpotifyArguments(action: "play", query: "DND", value: nil))
+            }
+        }
+    }
+}

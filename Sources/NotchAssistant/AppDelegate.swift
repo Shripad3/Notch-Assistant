@@ -31,8 +31,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    #if DEBUG
+    private let watchdog = MainThreadWatchdog()
+    #endif
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        #if DEBUG
+        watchdog.start()
+        #endif
 
         let display = DisplayResolver()
         let notch = NotchController(status: status, display: display)
