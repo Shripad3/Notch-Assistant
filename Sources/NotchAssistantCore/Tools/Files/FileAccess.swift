@@ -31,6 +31,12 @@ enum FileAccess {
         }
     }
 
+    /// Build output and dependencies inside projects: never the user's own
+    /// files, and changing them breaks the project. Like `.git` (spec §9).
+    static let deniedFolders: Set<String> = [
+        "__pycache__", "node_modules", "DerivedData", "site-packages", "venv", "Pods", "Carthage", "build", "target",
+    ]
+
     /// The canonical URL if `url` may be acted on, otherwise nil.
     static func validated(_ url: URL, roots: [URL] = scopedRoots) -> URL? {
         // resolvingSymlinksInPath also canonicalises "..", so a symlink or
@@ -42,6 +48,7 @@ enum FileAccess {
         }
         let denied = components.contains { component in
             component.hasPrefix(".") || component.hasSuffix(".app") || component == "Library"
+                || deniedFolders.contains(component)
         }
         return denied ? nil : resolved
     }

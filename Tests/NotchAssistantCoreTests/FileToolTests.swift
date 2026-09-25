@@ -285,3 +285,24 @@ struct BareFileNameTests {
         #expect(DirectMatcher.plan(for: transcript, tools: tools)?.steps.first?.tool.name != "openFile")
     }
 }
+
+struct SpokenExtensionTests {
+    /// From the screenshot: "rename my test txt" found test.txt, test_loadtxt.py
+    /// and a .pyc, and asked which one.
+    @Test func spokenExtensionIsAnExactMatch() {
+        #expect(FileRanking.nameScore("test.txt", ["test", "txt"]) == 3)
+        #expect(FileRanking.nameScore("test_loadtxt.py", ["test", "txt"]) < 3)
+        #expect(FileRanking.nameScore("test_loadtxt.cpython-313.pyc", ["test", "txt"]) < 3)
+        #expect(FileRanking.nameScore("Invoice.pdf", ["invoice"]) == 3)
+    }
+
+    @Test(arguments: ["__pycache__/x.pyc", "node_modules/a/b.js", "venv/lib/c.py"])
+    func projectBuildFoldersAreOffLimits(path: String) throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "notch-deny-\(UUID().uuidString)").resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appending(path: path)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: url)
+        #expect(FileAccess.validated(url, roots: [root.resolvingSymlinksInPath()]) == nil)
+    }
+}

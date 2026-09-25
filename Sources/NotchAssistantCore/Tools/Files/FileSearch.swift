@@ -172,12 +172,14 @@ enum FileRanking {
 
     /// 3: the name is exactly the words. 2: every word is a whole word of the
     /// name. 1: the words appear inside the name. 0: no words to match.
+    /// A spoken extension counts: "test txt" is exactly "test.txt".
     static func nameScore(_ name: String, _ words: [String]) -> Int {
         guard !words.isEmpty else { return 0 }
         let stem = (name as NSString).deletingPathExtension
-        let nameWords = AppNameMatcher.normalize(stem).split(separator: " ").map(String.init)
-        if nameWords == words { return 3 }
-        if words.allSatisfy(nameWords.contains) { return 2 }
+        let stemWords = AppNameMatcher.normalize(stem).split(separator: " ").map(String.init)
+        let fullWords = AppNameMatcher.normalize(name).split(separator: " ").map(String.init)
+        if stemWords == words || fullWords == words { return 3 }
+        if words.allSatisfy(fullWords.contains) { return 2 }
         return 1
     }
 }
