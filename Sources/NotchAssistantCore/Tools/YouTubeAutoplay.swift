@@ -33,13 +33,14 @@ enum YouTubeAutoplay {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
             try Task.checkCancellation()
-            if let (link, title) = firstVideoLink(in: application) {
-                let pressed = AXUIElementPerformAction(link, kAXPressAction as CFString)
-                guard pressed == .success else {
-                    Log.tools.notice("youtube autoplay [\(recipeVersion, privacy: .public)]: press failed (\(pressed.rawValue))")
+            if let (link, title, url) = firstVideoLink(in: application) {
+                try await open(url, link: link, in: app)
+                // Only claim success once the tab is really on the video.
+                guard try await reachesVideo(application) else {
+                    Log.tools.notice("youtube autoplay [\(recipeVersion, privacy: .public)]: \(app.bundleIdentifier ?? "?", privacy: .public) didn't navigate to \(url.absoluteString, privacy: .public)")
                     return nil
                 }
-                Log.tools.notice("youtube autoplay: pressed \"\(title, privacy: .public)\"")
+                Log.tools.notice("youtube autoplay: playing \"\(title, privacy: .public)\"")
                 return title
             }
             // The page is still loading: poll rather than sleep a fixed time (spec §9).
@@ -67,6 +68,73 @@ enum YouTubeAutoplay {
         return "page \(pageURL?.absoluteString ?? "without an address"), \(count) links, examined \(searchBudget - budget) elements, first: \(links)"
     }
 
+    /// Scriptable browsers whose active tab's address can be set directly.
+    /// Arc accepted an Accessibility press on the link but didn't navigate.
+    static let chromiumBrowsers: Set<String> = [
+        "company.thebrowser.Browser", "company.thebrowser.dia", "com.google.Chrome", "com.brave.Browser",
+        "com.microsoft.edgemac", "org.chromium.Chromium", "com.vivaldi.Vivaldi", "com.operasoftware.Opera",
+    ]
+
+    /// Sends the browser's current tab to the video: by AppleScript where
+    /// the browser supports it, else by pressing the link.
+    private static func open(_ url: URL, link: AXUIElement, in app: NSRunningApplication) async throws {
+        let bundle = app.bundleIdentifier ?? ""
+        let name = app.localizedName ?? "the browser"
+        let script: String? = if chromiumBrowsers.contains(bundle) {
+            "tell application id \"\(bundle)\" to set URL of active tab of front window to \(AppleScript.quoted(url.absoluteString))"
+        } else if bundle == "com.apple.Safari" {
+            "tell application id \"com.apple.Safari\" to set URL of current tab of front window to \(AppleScript.quoted(url.absoluteString))"
+        } else {
+            nil
+        }
+        if let script {
+            do {
+                try await AppleScript.run(script, controlling: name)
+                return
+            } catch {
+                Log.tools.notice("youtube autoplay: script navigation failed (\(AssistantFailure(error).message, privacy: .public)); pressing instead")
+            }
+        }
+        _ = AXUIElementPerformAction(link, kAXPressAction as CFString)
+    }
+
+    /// Whether the page shows a video within about three seconds.
+    private static func reachesVideo(_ application: AXUIElement) async throws -> Bool {
+        for _ in 0..<8 {
+            try Task.checkCancellation()
+            try await Task.sleep(for: .milliseconds(400))
+            if let window: AXUIElement = attribute(application, kAXFocusedWindowAttribute) {
+                var budget = 2000
+                if let page = anyWebArea(under: window, budget: &budget),
+                   let url: URL = attribute(page, kAXURLAttribute), isVideo(url) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private static func anyWebArea(under root: AXUIElement, budget: inout Int) -> AXUIElement? {
+        var found: AXUIElement?
+        walk(root, budget: &budget) { element, role in
+            guard role == "AXWebArea" else { return true }
+            let url: URL? = attribute(element, kAXURLAttribute)
+            if let url, url.host()?.contains("youtube.com") == true {
+                found = element
+                return false
+            }
+            return true
+        }
+        return found
+    }
+
+    /// The canonical address for a video, rebuilt from its id alone so
+    /// nothing else from the page is passed to the browser.
+    static func canonical(_ url: URL) -> URL? {
+        guard let id = videoID(url), id.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }) else { return nil }
+        return URL(string: "https://www.youtube.com/watch?v=\(id)")
+    }
+
     /// A real video: youtube.com/watch?v=… Shorts, channels, playlists
     /// without a video and ad-redirect links are not. Pure, for testing.
     static func isVideo(_ url: URL) -> Bool {
@@ -85,7 +153,7 @@ enum YouTubeAutoplay {
 
     // MARK: Accessibility tree
 
-    private static func firstVideoLink(in application: AXUIElement) -> (AXUIElement, String)? {
+    private static func firstVideoLink(in application: AXUIElement) -> (AXUIElement, String, URL)? {
         guard let window: AXUIElement = attribute(application, kAXFocusedWindowAttribute) else { return nil }
         var budget = searchBudget
         guard let page = resultsPage(under: window, budget: &budget) else { return nil }
@@ -111,15 +179,17 @@ enum YouTubeAutoplay {
     }
 
     /// Document order: the first qualifying link is the top result.
-    private static func firstLink(under page: AXUIElement, budget: inout Int) -> (AXUIElement, String)? {
+    private static func firstLink(under page: AXUIElement, budget: inout Int) -> (AXUIElement, String, URL)? {
         var result: (AXUIElement, String)?
         var firstVideo: String?
+        var firstURL: URL?
         walk(page, budget: &budget) { element, role in
             guard role == "AXLink", let url: URL = attribute(element, kAXURLAttribute), isVideo(url) else { return true }
             let id = videoID(url)
             let title: String = attribute(element, kAXTitleAttribute) ?? attribute(element, kAXDescriptionAttribute) ?? ""
             if firstVideo == nil {
                 firstVideo = id
+                firstURL = canonical(url)
                 result = (element, title)
                 // A thumbnail link has no text; look for its title link next.
                 return title.isEmpty
@@ -129,7 +199,8 @@ enum YouTubeAutoplay {
             if !title.isEmpty { result = (element, title) }
             return title.isEmpty
         }
-        return result.map { ($0.0, $0.1.isEmpty ? "the top result" : $0.1) }
+        guard let result, let firstURL else { return nil }
+        return (result.0, result.1.isEmpty ? "the top result" : result.1, firstURL)
     }
 
     /// Pre-order walk. `visit` returns false to stop.

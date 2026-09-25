@@ -125,3 +125,15 @@ struct YouTubeAutoplayRuleTests {
         #expect(YouTubeAutoplay.videoID(URL(string: "https://www.youtube.com/watch?v=abc123&t=4")!) == "abc123")
     }
 }
+
+struct YouTubeCanonicalURLTests {
+    @Test func rebuildsFromIDOnly() {
+        let url = URL(string: "https://www.youtube.com/watch?v=abc_D-12&pp=ygUF&t=30s")!
+        #expect(YouTubeAutoplay.canonical(url)?.absoluteString == "https://www.youtube.com/watch?v=abc_D-12")
+    }
+
+    /// Nothing that could break out of the AppleScript string.
+    @Test func rejectsOddIDs() {
+        #expect(YouTubeAutoplay.canonical(URL(string: "https://www.youtube.com/watch?v=a%22b")!) == nil)
+    }
+}
