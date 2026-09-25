@@ -150,3 +150,13 @@ struct DNDAndSpotifyGroundingTests {
         }
     }
 }
+
+struct SpotifySuffixTests {
+    let tools = ToolRegistry(tools: ToolRegistry.standard.tools, isEnabled: { _ in true }).enabledTools()
+
+    /// From the log: this played a song called "Some Music".
+    @Test func playSomeMusicOnSpotifyResumes() {
+        let step = DirectMatcher.plan(for: "play some music on Spotify", tools: tools)?.steps.first
+        #expect((try? step?.arguments.value(String.self, forProperty: "action")) == "play")
+    }
+}

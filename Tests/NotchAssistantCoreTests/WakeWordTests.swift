@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreMedia
 import Speech
 import Synchronization
 @testable import NotchAssistantCore
@@ -187,5 +188,23 @@ struct SpeechWakeRecognitionTests {
     func noFalseAlfred(clip: String) async throws {
         let text = try await transcript(clip)
         #expect(!WakePhrase.contains(text), "\(clip): \(text)")
+    }
+}
+
+struct WakeDeduplicatorTests {
+    private func range(_ start: Double, _ end: Double) -> CMTimeRange {
+        CMTimeRange(start: CMTime(seconds: start, preferredTimescale: 1000), end: CMTime(seconds: end, preferredTimescale: 1000))
+    }
+
+    /// From the log: "Alfred" (draft) then "Alfred, pause." (final) for one utterance.
+    @Test func revisionOfHandledAudioIsIgnored() {
+        let handled = range(10.0, 10.6).end
+        #expect(!WakeDeduplicator.isNew(range(10.0, 11.4), handledThrough: handled))
+        #expect(!WakeDeduplicator.isNew(range(10.2, 11.4), handledThrough: handled))
+    }
+
+    @Test func laterSpeechIsNew() {
+        #expect(WakeDeduplicator.isNew(range(15.0, 15.8), handledThrough: range(10.0, 10.6).end))
+        #expect(WakeDeduplicator.isNew(range(0.0, 1.0), handledThrough: .zero))
     }
 }

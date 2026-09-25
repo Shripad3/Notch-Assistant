@@ -99,7 +99,13 @@ struct ControlSpotifyTool: AssistantTool {
     }
 
     func directArguments(for command: DirectCommand) -> ControlSpotifyArguments? {
-        switch command.text {
+        // Dropped first: "play some music on Spotify" is the transport phrase
+        // "play some music", not a song called "some music".
+        var text = command.text
+        for suffix in [" on spotify", " in spotify"] where text.hasSuffix(suffix) {
+            text.removeLast(suffix.count)
+        }
+        switch text {
         case "play", "play some music", "play music", "play my music", "resume", "resume music", "resume the music", "play spotify", "resume spotify":
             return .init(action: "play", query: nil, value: nil)
         case "pause", "stop", "pause music", "pause the music", "stop the music", "stop music", "pause spotify":

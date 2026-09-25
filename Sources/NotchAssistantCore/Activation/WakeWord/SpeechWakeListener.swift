@@ -33,6 +33,15 @@ public enum WakeEngine: String, CaseIterable, Sendable {
     }
 }
 
+/// Decides whether a recognizer result covers audio not yet acted on.
+enum WakeDeduplicator {
+    /// New only if it starts after everything already handled; a revision of
+    /// handled text starts at or before that point.
+    static func isNew(_ range: CMTimeRange, handledThrough: CMTime) -> Bool {
+        handledThrough == .zero || CMTimeCompare(range.start, handledThrough) >= 0
+    }
+}
+
 /// Recent audio and room level, kept by a listener so that a detection can
 /// hand over the lead-in audio and the noise floor.
 struct AudioHistory {
@@ -109,7 +118,11 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
     private var history = AudioHistory(prerollSeconds: SpeechWakeListener.prerollSeconds)
     private var converter: AVAudioConverter?
     private var quietUntil = Date.distantPast
-    private var triggeredSegments: Set<CMTime> = []
+    /// Audio up to here has already produced a detection. The recognizer
+    /// revises text it has already reported ("Alfred" as a draft, then
+    /// "Alfred, pause." as the final result) and each revision can carry a
+    /// different range, so repeats are recognised by audio time, not identity.
+    private var handledThrough = CMTime.zero
 
     public init(onDetect: @escaping @Sendable (WakeContext) -> Void) {
         self.onDetect = onDetect
@@ -154,8 +167,8 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
                 for try await result in transcriber.results {
                     guard let listener = self else { return }
                     let text = String(result.text.characters)
-                    let segment = result.range.start
-                    listener.queue.async { listener.received(text, segment: segment) }
+                    let range = result.range
+                    listener.queue.async { listener.received(text, range: range) }
                 }
             } catch {
                 Log.speech.error("wake word: recognizer stopped: \(error.localizedDescription, privacy: .public)")
@@ -205,7 +218,7 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
         await current.analyzer?.cancelAndFinishNow()
         queue.async { [self] in
             history.clear()
-            triggeredSegments = []
+            handledThrough = .zero
         }
         Log.speech.notice("wake word: stopped")
     }
@@ -216,12 +229,12 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
         input.yield(AnalyzerInput(buffer: converted))
     }
 
-    /// One detection per spoken segment: the recognizer revises a segment's
-    /// text many times ("Hey Al…", "Hey Alfred", "Hey Alfred open…").
-    private func received(_ text: String, segment: CMTime) {
-        guard !triggeredSegments.contains(segment), Date() >= quietUntil, WakePhrase.contains(text) else { return }
-        triggeredSegments.insert(segment)
-        if triggeredSegments.count > 50 { triggeredSegments.removeFirst() }
+    /// One detection per stretch of audio, however many times the recognizer
+    /// revises its text ("Hey Al…", "Hey Alfred", "Hey Alfred, open…").
+    private func received(_ text: String, range: CMTimeRange) {
+        guard WakeDeduplicator.isNew(range, handledThrough: handledThrough),
+              Date() >= quietUntil, WakePhrase.contains(text) else { return }
+        handledThrough = CMTimeMaximum(handledThrough, range.end)
         quietUntil = Date().addingTimeInterval(Self.refractory)
         Log.speech.notice("wake word: heard \"\(text, privacy: .public)\"")
         onDetect(WakeContext(preroll: history.preroll, ambientFloor: history.ambientFloor(), score: 1))
