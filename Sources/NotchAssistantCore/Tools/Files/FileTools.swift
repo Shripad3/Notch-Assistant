@@ -76,18 +76,22 @@ struct OpenFileTool: AssistantTool {
         try FileAccess.ensureAccess()
         let found = try await SpotlightSearch.run(arguments.query)
         guard let best = found.first else { throw FileTools.notFound(arguments) }
-        try Task.checkCancellation()
-        // Re-validated at the moment of use, not only when found.
-        guard let url = FileAccess.validated(best.url) else { throw ToolError("That file is outside the folders I may open") }
-        Log.tools.notice("openFile → \(best.name, privacy: .public) (\(found.count) matches)")
-        _ = try await NSWorkspace.shared.open(url, configuration: NSWorkspace.OpenConfiguration())
+        let opened = try await FileTools.open(best)
         let others = found.count - 1
-        return others > 0 ? "Opened \(best.name) · \(others) other match\(others == 1 ? "" : "es")" : "Opened \(best.name)"
+        return ToolResult(others > 0 ? "\(opened) · \(others) other match\(others == 1 ? "" : "es")" : opened)
     }
 
     func directArguments(for command: DirectCommand) -> FileRequestArguments? {
-        guard command.verb == "open" else { return nil }
-        return FileQuery(spoken: command.rest).map(FileRequestArguments.init)
+        if command.verb == "open" {
+            return FileQuery(spoken: command.rest).map(FileRequestArguments.init)
+        }
+        // A bare name with a file type ("Foundations of process mining
+        // introduction.PDF") means open it; the model chose findFiles.
+        guard command.verb.isEmpty,
+              !FindFilesTool.prefixes.contains(where: { command.text.hasPrefix($0 + " ") }),
+              let query = FileQuery(spoken: command.text), query.kind != nil, !query.words.isEmpty
+        else { return nil }
+        return FileRequestArguments(query)
     }
 }
 
@@ -114,12 +118,17 @@ struct FindFilesTool: AssistantTool {
         try FileAccess.ensureAccess()
         let found = try await SpotlightSearch.run(arguments.query, limit: Self.limit + 1)
         guard !found.isEmpty else { throw FileTools.notFound(arguments) }
+        // One match: nothing to choose, so open it (a one-row list is just an
+        // extra click). Lists are for choosing between several.
+        if found.count == 1 {
+            return ToolResult(try await FileTools.open(found[0]))
+        }
         let shown = Array(found.prefix(Self.limit))
         let count = found.count > Self.limit ? "\(Self.limit)+" : "\(found.count)"
         return ToolResult("Found \(count) — click one to open", items: FileTokens.register(shown))
     }
 
-    private static let prefixes = ["show me the list of", "show me a list of", "show me", "list", "find", "where is", "where s", "what s on", "what s in"]
+    static let prefixes = ["show me the list of", "show me a list of", "show me", "list", "find", "where is", "where s", "what s on", "what s in"]
 
     func directArguments(for command: DirectCommand) -> FileRequestArguments? {
         guard let prefix = Self.prefixes.first(where: { command.text.hasPrefix($0 + " ") }) else { return nil }
@@ -130,6 +139,15 @@ struct FindFilesTool: AssistantTool {
 }
 
 enum FileTools {
+    /// Opens a found file, validating its path again at the moment of use.
+    static func open(_ file: FoundFile) async throws -> String {
+        try Task.checkCancellation()
+        guard let url = FileAccess.validated(file.url) else { throw ToolError("That file is outside the folders I may open") }
+        Log.tools.notice("openFile → \(file.name, privacy: .public)")
+        _ = try await NSWorkspace.shared.open(url, configuration: NSWorkspace.OpenConfiguration())
+        return "Opened \(file.name)"
+    }
+
     private static let contentWords: Set<String> = ["mentions", "mentioning", "contains", "containing", "inside", "says", "saying", "about"]
 
     /// The agent never reads file contents (spec §9). A request that depends

@@ -267,3 +267,21 @@ struct FileTokenTests {
         #expect(result.items.isEmpty)
     }
 }
+
+struct BareFileNameTests {
+    let tools = ToolRegistry(tools: ToolRegistry.standard.tools, isEnabled: { _ in true }).enabledTools()
+
+    /// From the log: said without "open", this became a one-row list.
+    @Test func bareNameWithTypeOpens() {
+        let step = DirectMatcher.plan(for: "Foundations of process mining introduction.PDF", tools: tools)?.steps.first
+        #expect(step?.tool.name == "openFile")
+        let query = try? FileRequestArguments(step!.arguments).query
+        #expect(query?.kind == .pdf)
+        #expect(query?.words == ["foundations", "process", "mining", "introduction"])
+    }
+
+    @Test(arguments: ["pdf", "the weather", "screenshots"])
+    func notBareNames(transcript: String) {
+        #expect(DirectMatcher.plan(for: transcript, tools: tools)?.steps.first?.tool.name != "openFile")
+    }
+}
