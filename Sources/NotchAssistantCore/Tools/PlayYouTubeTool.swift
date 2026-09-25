@@ -47,7 +47,7 @@ struct PlayYouTubeTool: AssistantTool {
 
         // Tier 2: press the first real video. Any failure keeps Tier 1.
         if YouTubeAutoplay.isEnabled, let app = Browser.runningApp(named: spokenBrowser),
-           let title = try await YouTubeAutoplay.playFirstResult(in: app) {
+           let title = try await YouTubeAutoplay.playFirstResult(in: app, searchWord: YouTubeAutoplay.searchWord(for: arguments.query)) {
             return ToolResult("Playing “\(title)”" + place)
         }
         let what = latest ? "latest “\(arguments.query)” videos" : "“\(arguments.query)”"

@@ -137,3 +137,25 @@ struct YouTubeCanonicalURLTests {
         #expect(YouTubeAutoplay.canonical(URL(string: "https://www.youtube.com/watch?v=a%22b")!) == nil)
     }
 }
+
+struct YouTubeResultsTabTests {
+    @Test func searchWordSurvivesEncoding() {
+        #expect(YouTubeAutoplay.searchWord(for: "Matt Armstrong") == "armstrong")
+        let word = YouTubeAutoplay.searchWord(for: "matt armstrong")
+        #expect("https://www.youtube.com/results?search_query=matt+armstrong&sp=CAI%3D".contains(word))
+        #expect("https://www.youtube.com/results?search_query=matt%20armstrong".contains(word))
+    }
+
+    /// Only the results tab is ever changed; never the active tab.
+    @Test func scriptTargetsTheResultsTab() {
+        let script = YouTubeAutoplay.resultsTabScript(
+            bundle: "company.thebrowser.Browser",
+            video: URL(string: "https://www.youtube.com/watch?v=abc")!,
+            searchWord: "armstrong"
+        )
+        #expect(script.contains("contains \"youtube.com/results\""))
+        #expect(script.contains("contains \"armstrong\""))
+        #expect(!script.contains("active tab"))
+        #expect(!script.contains("current tab"))
+    }
+}

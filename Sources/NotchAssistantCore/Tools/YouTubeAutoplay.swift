@@ -19,7 +19,9 @@ enum YouTubeAutoplay {
 
     /// The first result's title when it was pressed, or nil when the results
     /// page stays as it is.
-    static func playFirstResult(in app: NSRunningApplication) async throws -> String? {
+    /// `searchWord` identifies the results tab this command opened, so that
+    /// tab (and only that tab) becomes the video.
+    static func playFirstResult(in app: NSRunningApplication, searchWord: String) async throws -> String? {
         guard AXIsProcessTrusted() else {
             Log.tools.notice("youtube autoplay: no Accessibility permission; staying on results")
             return nil
@@ -34,7 +36,7 @@ enum YouTubeAutoplay {
         while ContinuousClock.now < deadline {
             try Task.checkCancellation()
             if let (link, title, url) = firstVideoLink(in: application) {
-                try await open(url, link: link, in: app)
+                try await open(url, link: link, in: app, searchWord: searchWord)
                 // Only claim success once the tab is really on the video.
                 guard try await reachesVideo(application) else {
                     Log.tools.notice("youtube autoplay [\(recipeVersion, privacy: .public)]: \(app.bundleIdentifier ?? "?", privacy: .public) didn't navigate to \(url.absoluteString, privacy: .public)")
@@ -75,27 +77,57 @@ enum YouTubeAutoplay {
         "com.microsoft.edgemac", "org.chromium.Chromium", "com.vivaldi.Vivaldi", "com.operasoftware.Opera",
     ]
 
-    /// Sends the browser's current tab to the video: by AppleScript where
-    /// the browser supports it, else by pressing the link.
-    private static func open(_ url: URL, link: AXUIElement, in app: NSRunningApplication) async throws {
+    /// Turns the results tab this command opened into the video. Never the
+    /// "active tab of the front window": Arc had opened the results in
+    /// another window, and that replaced the user's own tab (a Claude chat).
+    /// If the results tab can't be found, the video opens in a new tab.
+    private static func open(_ url: URL, link: AXUIElement, in app: NSRunningApplication, searchWord: String) async throws {
         let bundle = app.bundleIdentifier ?? ""
         let name = app.localizedName ?? "the browser"
-        let script: String? = if chromiumBrowsers.contains(bundle) {
-            "tell application id \"\(bundle)\" to set URL of active tab of front window to \(AppleScript.quoted(url.absoluteString))"
-        } else if bundle == "com.apple.Safari" {
-            "tell application id \"com.apple.Safari\" to set URL of current tab of front window to \(AppleScript.quoted(url.absoluteString))"
-        } else {
-            nil
-        }
-        if let script {
+        if chromiumBrowsers.contains(bundle) || bundle == "com.apple.Safari" {
             do {
-                try await AppleScript.run(script, controlling: name)
-                return
+                let outcome = try await AppleScript.evaluate(
+                    resultsTabScript(bundle: bundle, video: url, searchWord: searchWord),
+                    controlling: name
+                )
+                if outcome.first == "replaced" { return }
+                Log.tools.notice("youtube autoplay: results tab not found; opening a new tab")
             } catch {
-                Log.tools.notice("youtube autoplay: script navigation failed (\(AssistantFailure(error).message, privacy: .public)); pressing instead")
+                Log.tools.notice("youtube autoplay: couldn't script \(name, privacy: .public) (\(AssistantFailure(error).message, privacy: .public)); opening a new tab")
             }
+            if let appURL = app.bundleURL {
+                _ = try await NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
+            }
+            return
         }
+        // Not scriptable: press the link, which is on the results page itself.
         _ = AXUIElementPerformAction(link, kAXPressAction as CFString)
+    }
+
+    /// Finds the tab showing this command's results, in any window, and
+    /// sends it to the video. Pure, for testing.
+    static func resultsTabScript(bundle: String, video: URL, searchWord: String) -> String {
+        [
+            "tell application id \(AppleScript.quoted(bundle))",
+            "    repeat with w in windows",
+            "        repeat with t in tabs of w",
+            "            set tabURL to URL of t",
+            "            if tabURL contains \"youtube.com/results\" and tabURL contains \(AppleScript.quoted(searchWord)) then",
+            "                set URL of t to \(AppleScript.quoted(video.absoluteString))",
+            "                return \"replaced\"",
+            "            end if",
+            "        end repeat",
+            "    end repeat",
+            "    return \"missing\"",
+            "end tell",
+        ].joined(separator: "\n")
+    }
+
+    /// A word from the search that appears in the results tab's address
+    /// however the browser encodes spaces ("%20" or "+").
+    static func searchWord(for query: String) -> String {
+        let words: [String] = AppNameMatcher.normalize(query).split(separator: " ").map(String.init)
+        return words.max { $0.count < $1.count } ?? query
     }
 
     /// Whether the page shows a video within about three seconds.
