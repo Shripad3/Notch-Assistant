@@ -29,19 +29,23 @@ public enum PermissionChecker {
     public static func all() async -> [PermissionItem] {
         async let spotify = automation("com.spotify.client")
         async let systemEvents = automation("com.apple.systemevents")
+        async let shortcuts = automation("com.apple.shortcuts.events")
         let spotifyStatus = await spotify
         let systemEventsStatus = await systemEvents
+        let shortcutsStatus = await shortcuts
         return [
             PermissionItem(id: "microphone", title: "Microphone", neededFor: "All voice input",
                            link: .microphone, status: capture(.audio)),
             PermissionItem(id: "speech", title: "Speech Recognition", neededFor: "Turning speech into text, on this Mac",
                            link: .speechRecognition, status: speech()),
-            PermissionItem(id: "accessibility", title: "Accessibility", neededFor: "In-page navigation (v3)",
+            PermissionItem(id: "accessibility", title: "Accessibility", neededFor: "Brightness and locking the screen; YouTube auto-play",
                            link: .accessibility, status: AXIsProcessTrusted() ? .granted : .notRequested),
             PermissionItem(id: "automation.spotify", title: "Automation: Spotify", neededFor: "Playing and pausing music",
                            link: .automation, status: spotifyStatus),
             PermissionItem(id: "automation.systemevents", title: "Automation: System Events", neededFor: "Putting the Mac to sleep",
                            link: .automation, status: systemEventsStatus),
+            PermissionItem(id: "automation.shortcuts", title: "Automation: Shortcuts", neededFor: "Do Not Disturb",
+                           link: .automation, status: shortcutsStatus),
             PermissionItem(id: "files", title: "Files and Folders", neededFor: "File search and open (v2), metadata only",
                            link: .filesAndFolders, status: .askedOnFirstUse),
             PermissionItem(id: "camera", title: "Camera", neededFor: "Gestures only (v4)",

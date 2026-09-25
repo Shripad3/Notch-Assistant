@@ -4,22 +4,27 @@ import FoundationModels
 
 @Generable
 struct SystemControlArguments: Sendable {
-    @Guide(description: "What to do", .anyOf(["volumeUp", "volumeDown", "setVolume", "mute", "unmute", "sleep"]))
+    @Guide(description: "What to do", .anyOf([
+        "volumeUp", "volumeDown", "setVolume", "mute", "unmute",
+        "brightnessUp", "brightnessDown", "setBrightness",
+        "doNotDisturbOn", "doNotDisturbOff", "lock", "sleep",
+    ]))
     var action: String
-    @Guide(description: "Volume percent from 0 to 100, only for setVolume")
+    @Guide(description: "Percent from 0 to 100, only for setVolume or setBrightness")
     var value: Int?
 }
 
-/// Volume, mute and sleep through public APIs only. Brightness, Do Not
-/// Disturb and lock need simulated keys and come in v3 with Accessibility.
-/// No shell escape hatch (spec §9).
+/// Volume and mute through CoreAudio, sleep through System Events,
+/// brightness and lock through simulated keys (Accessibility), and Do Not
+/// Disturb through the user's shortcuts. No shell escape hatch (spec §9).
 struct SystemControlTool: AssistantTool {
     let name = "systemControl"
     let title = "System"
     let symbol = "slider.horizontal.3"
     let description = """
-        Change this Mac's sound volume, mute or unmute it, or put it to sleep. \
-        "turn it down" → action "volumeDown". "set the volume to 30" → action "setVolume", value 30.
+        Change this Mac's volume or screen brightness, turn Do Not Disturb on or off, lock the screen, or sleep. \
+        "turn it down" → action "volumeDown". "set the volume to 30" → action "setVolume", value 30. \
+        "make the screen brighter" → action "brightnessUp".
         """
     let requiresNetwork = false
     let permission = ToolPermission.varies
@@ -35,6 +40,12 @@ struct SystemControlTool: AssistantTool {
         case "mute": "Mute"
         case "unmute": "Unmute"
         case "sleep": "Sleep"
+        case "brightnessUp": "Brighter"
+        case "brightnessDown": "Dimmer"
+        case "setBrightness": "Brightness \(arguments.value.map { "\($0)%" } ?? "")"
+        case "doNotDisturbOn": "Do Not Disturb on"
+        case "doNotDisturbOff": "Do Not Disturb off"
+        case "lock": "Lock screen"
         default: arguments.action
         }
     }
@@ -43,6 +54,7 @@ struct SystemControlTool: AssistantTool {
     /// you", the model turned the volume down.
     private static let groundingWords: Set<String> = [
         "volume", "sound", "audio", "mute", "unmute", "louder", "quieter", "loud", "quiet", "turn", "sleep", "speakers",
+        "brightness", "bright", "brighter", "dim", "dimmer", "darker", "screen", "display", "disturb", "focus", "lock",
     ]
 
     func execute(_ arguments: SystemControlArguments) async throws -> ToolResult {
@@ -68,6 +80,30 @@ struct SystemControlTool: AssistantTool {
         case "unmute":
             try SystemAudio.setMuted(false)
             return "Unmuted"
+        case "brightnessUp":
+            try await SystemKeys.adjust(.up(steps: 2))
+            return "Brighter"
+        case "brightnessDown":
+            try await SystemKeys.adjust(.down(steps: 2))
+            return "Dimmer"
+        case "setBrightness":
+            guard let value = arguments.value, (0...100).contains(value) else { throw ToolError("What brightness should I set?") }
+            try await SystemKeys.adjust(.set(Double(value) / 100))
+            return "Brightness \(value)%"
+        case "doNotDisturbOn":
+            try await Shortcuts.run(Shortcuts.doNotDisturbOn)
+            return "Do Not Disturb on"
+        case "doNotDisturbOff":
+            try await Shortcuts.run(Shortcuts.doNotDisturbOff)
+            return "Do Not Disturb off"
+        case "lock":
+            // Like sleep: let the notch show the result first.
+            try SystemKeys.ensureTrusted()
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                try? await SystemKeys.lockScreen()
+            }
+            return "Locking"
         case "sleep":
             // Leave a moment for the notch to show the result first.
             Task {
@@ -93,6 +129,21 @@ struct SystemControlTool: AssistantTool {
             return .init(action: "volumeDown", value: nil)
         case "go to sleep", "put the mac to sleep", "put my mac to sleep", "sleep the mac", "sleep now":
             return .init(action: "sleep", value: nil)
+        case "brighter", "brightness up", "increase brightness", "increase the brightness", "turn up the brightness",
+             "turn the brightness up", "make the screen brighter", "make it brighter":
+            return .init(action: "brightnessUp", value: nil)
+        case "dimmer", "darker", "brightness down", "decrease brightness", "decrease the brightness", "turn down the brightness",
+             "turn the brightness down", "dim the screen", "make the screen darker", "make it darker":
+            return .init(action: "brightnessDown", value: nil)
+        case "max brightness", "maximum brightness", "full brightness":
+            return .init(action: "setBrightness", value: 100)
+        case "lock", "lock the screen", "lock screen", "lock my mac", "lock the mac", "lock my screen", "lock the computer":
+            return .init(action: "lock", value: nil)
+        case "turn on do not disturb", "do not disturb on", "enable do not disturb", "do not disturb", "don t disturb me",
+             "turn on focus", "focus mode on":
+            return .init(action: "doNotDisturbOn", value: nil)
+        case "turn off do not disturb", "do not disturb off", "disable do not disturb", "turn off focus", "focus mode off":
+            return .init(action: "doNotDisturbOff", value: nil)
         default:
             break
         }
@@ -100,6 +151,10 @@ struct SystemControlTool: AssistantTool {
         let words = text.split(separator: " ").map(String.init).filter { !["set", "the", "to", "percent", "at"].contains($0) }
         if words.count == 2, words[0] == "volume", let value = Int(words[1]), (0...100).contains(value) {
             return .init(action: "setVolume", value: value)
+        }
+        // "set the brightness to 60", "brightness 60"
+        if words.count == 2, words[0] == "brightness", let value = Int(words[1]), (0...100).contains(value) {
+            return .init(action: "setBrightness", value: value)
         }
         return nil
     }

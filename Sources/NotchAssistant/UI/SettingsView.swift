@@ -222,6 +222,21 @@ private struct CapabilitiesPane: View {
                 }
             }
             Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Do Not Disturb runs two shortcuts you create once in the Shortcuts app:")
+                    Text("1. New shortcut named **Alfred: Do Not Disturb On** with one action: *Set Focus* → Do Not Disturb → **On** (until turned off).")
+                    Text("2. New shortcut named **Alfred: Do Not Disturb Off** with *Set Focus* → Do Not Disturb → **Off**.")
+                    Text("The names must match exactly. The first use asks to let Notch Assistant control Shortcuts.")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.callout)
+                Button("Open Shortcuts") {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Shortcuts.app"))
+                }
+            } header: {
+                Text("Do Not Disturb")
+            }
+            Section {
                 Picker("Search engine", selection: $searchEngine) {
                     ForEach(SearchEngine.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                 }

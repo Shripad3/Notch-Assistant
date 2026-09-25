@@ -77,3 +77,38 @@ struct SpotifyExtrasTests {
         #expect(!SpotifyWebAPI.isLikedSongs("chill vibes"))
     }
 }
+
+struct BrightnessLockFocusTests {
+    let tools = ToolRegistry(tools: ToolRegistry.standard.tools, isEnabled: { _ in true }).enabledTools()
+
+    private func action(_ transcript: String) -> (tool: String, action: String?, value: Int?)? {
+        guard let step = DirectMatcher.plan(for: transcript, tools: tools)?.steps.first else { return nil }
+        return (step.tool.name, try? step.arguments.value(String.self, forProperty: "action"), try? step.arguments.value(Int?.self, forProperty: "value"))
+    }
+
+    @Test(arguments: [
+        ("Make the screen brighter", "brightnessUp", nil), ("dimmer", "brightnessDown", nil),
+        ("set the brightness to 60", "setBrightness", 60), ("brightness 30%", "setBrightness", 30),
+        ("full brightness", "setBrightness", 100), ("Lock my Mac.", "lock", nil), ("lock the screen", "lock", nil),
+        ("Turn on do not disturb", "doNotDisturbOn", nil), ("do not disturb off", "doNotDisturbOff", nil),
+    ] as [(String, String, Int?)])
+    func routes(transcript: String, expected: String, value: Int?) {
+        let result = action(transcript)
+        #expect(result?.tool == "systemControl")
+        #expect(result?.action == expected)
+        #expect(result?.value == value)
+    }
+
+    /// "lock" alone is the screen, but "open my lock screen wallpaper" is not.
+    @Test func lockOnlyAsCommand() {
+        #expect(action("open my lock screen wallpaper")?.action != "lock")
+    }
+
+    @Test func groundingCoversNewWords() async {
+        await #expect(throws: ToolError.self) {
+            try await CommandContext.$transcript.withValue("hello there") {
+                try await SystemControlTool().execute(SystemControlArguments(action: "lock", value: nil))
+            }
+        }
+    }
+}
