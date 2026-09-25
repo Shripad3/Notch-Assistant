@@ -139,25 +139,56 @@ struct YouTubeCanonicalURLTests {
 }
 
 struct YouTubeResultsTabTests {
+    let video = URL(string: "https://www.youtube.com/watch?v=abc")!
+
     @Test func searchWordSurvivesEncoding() {
-        #expect(YouTubeAutoplay.searchWord(for: "Matt Armstrong") == "armstrong")
         let word = YouTubeAutoplay.searchWord(for: "matt armstrong")
+        #expect(word == "armstrong")
         #expect("https://www.youtube.com/results?search_query=matt+armstrong&sp=CAI%3D".contains(word))
         #expect("https://www.youtube.com/results?search_query=matt%20armstrong".contains(word))
     }
 
-    /// Only the results tab is ever changed; never the active tab.
-    @Test func scriptTargetsTheResultsTab() {
-        let video = URL(string: "https://www.youtube.com/watch?v=abc")!
-        let byID = YouTubeAutoplay.resultsTabScript(bundle: "company.thebrowser.Browser", video: video, tab: .id("TAB-42"))
-        #expect(byID.contains("((id of t) as text) is \"TAB-42\""))
-        #expect(byID.contains("spaces of w"))
-        let byAddress = YouTubeAutoplay.resultsTabScript(bundle: "com.google.Chrome", video: video, tab: .search("armstrong"))
-        #expect(byAddress.contains("contains \"youtube.com/results\""))
-        #expect(byAddress.contains("contains \"armstrong\""))
-        for script in [byID, byAddress] {
-            #expect(!script.contains("active tab"))
-            #expect(!script.contains("current tab"))
-        }
+    /// By id: only while our tab is still the active one.
+    @Test func idScriptChecksItIsOurTab() {
+        let script = YouTubeAutoplay.navigateScript(bundle: "company.thebrowser.Browser", tab: .id("TAB-42"), to: video)
+        #expect(script.contains("if ((id of active tab) as text) is \"TAB-42\" then"))
+        #expect(script.contains("set URL of active tab to \"https://www.youtube.com/watch?v=abc\""))
+    }
+
+    @Test func searchScriptOnlyTouchesResultsTabs() {
+        let script = YouTubeAutoplay.navigateScript(bundle: "com.apple.Safari", tab: .search("armstrong"), to: video)
+        #expect(script.contains("contains \"youtube.com/results\""))
+        #expect(!script.contains("active tab"))
+        #expect(!script.contains("current tab"))
+    }
+
+    @Test func makeTabReadsIDFromActiveTab() {
+        let script = YouTubeAutoplay.makeTabScript(bundle: "company.thebrowser.Browser", url: video)
+        #expect(script.contains("make new tab with properties"))
+        #expect(script.contains("return (id of active tab) as text"))
+    }
+}
+
+struct YouTubeChannelTests {
+    @Test(arguments: [
+        ("Mat Armstrong", "matt armstrong"), ("Madame", "madame songs"), ("MrBeast", "mr beast"),
+    ])
+    func channelMatches(title: String, query: String) {
+        #expect(YouTubeAutoplay.channelMatches(title: title, query: query))
+    }
+
+    /// From the log: this uploader is not "Madame".
+    @Test(arguments: [("KINGS x TRANNOS", "madame songs"), ("", "madame"), ("Top Gear", "mat armstrong")])
+    func channelMismatches(title: String, query: String) {
+        #expect(!YouTubeAutoplay.channelMatches(title: title, query: query))
+    }
+
+    @Test func channelURLs() {
+        #expect(YouTubeAutoplay.isChannel(URL(string: "https://www.youtube.com/@MatArmstrongbmx")!))
+        #expect(YouTubeAutoplay.isChannel(URL(string: "https://www.youtube.com/channel/UC123")!))
+        #expect(!YouTubeAutoplay.isChannel(URL(string: "https://www.youtube.com/@MatArmstrongbmx/shorts")!))
+        #expect(!YouTubeAutoplay.isChannel(URL(string: "https://www.youtube.com/watch?v=abc")!))
+        #expect(YouTubeAutoplay.channelVideosPage(URL(string: "https://www.youtube.com/@MatArmstrongbmx")!)?.absoluteString
+            == "https://www.youtube.com/@MatArmstrongbmx/videos")
     }
 }

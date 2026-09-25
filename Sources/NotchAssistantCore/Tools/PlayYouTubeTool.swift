@@ -47,10 +47,13 @@ struct PlayYouTubeTool: AssistantTool {
         // Tier 2, preferred path: open the results in a tab created by
         // script, so that exact tab becomes the video (search and video in
         // one tab). Any failure keeps Tier 1.
+        // "Latest" starts from relevance-ordered results, where the creator's
+        // channel appears; autoplay then goes to that channel's newest video.
         if YouTubeAutoplay.isEnabled, let app = Browser.runningApp(named: spokenBrowser),
-           let tabID = await YouTubeAutoplay.openResultsTab(url, in: app) {
+           let relevance = Self.searchURL(for: arguments.query, latest: false),
+           let tabID = await YouTubeAutoplay.openResultsTab(latest ? relevance : url, in: app) {
             let place = app.localizedName.map { " in \($0)" } ?? ""
-            if let title = try await YouTubeAutoplay.playFirstResult(in: app, tab: .id(tabID)) {
+            if let title = try await YouTubeAutoplay.play(query: arguments.query, latestFromCreator: latest, in: app, tab: .id(tabID)) {
                 return ToolResult("Playing “\(title)”" + place)
             }
             return ToolResult("YouTube results for \(what)" + place)
@@ -58,8 +61,9 @@ struct PlayYouTubeTool: AssistantTool {
 
         let browser = try await Browser.open(url, in: spokenBrowser)
         let place = browser.map { " in \($0)" } ?? ""
+        let tab = YouTubeAutoplay.ResultsTab.search(YouTubeAutoplay.searchWord(for: arguments.query))
         if YouTubeAutoplay.isEnabled, let app = Browser.runningApp(named: spokenBrowser),
-           let title = try await YouTubeAutoplay.playFirstResult(in: app, tab: .search(YouTubeAutoplay.searchWord(for: arguments.query))) {
+           let title = try await YouTubeAutoplay.play(query: arguments.query, latestFromCreator: false, in: app, tab: tab) {
             return ToolResult("Playing “\(title)”" + place)
         }
         return ToolResult("YouTube results for \(what)" + place)

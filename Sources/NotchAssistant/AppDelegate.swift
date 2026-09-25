@@ -98,6 +98,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         Log.app.info("launched")
         #if DEBUG
+        // Checks browser tab scripting end to end (make, read id, navigate,
+        // close) on a throwaway tab: open NotchAssistant.app --args --probe-browser
+        if CommandLine.arguments.contains("--probe-browser") {
+            Task { await BrowserProbe.run() }
+        }
         // Exercises every notch transition, including hiding, without a mic:
         // open NotchAssistant.app --args --preview-states
         if CommandLine.arguments.contains("--preview-states") {
