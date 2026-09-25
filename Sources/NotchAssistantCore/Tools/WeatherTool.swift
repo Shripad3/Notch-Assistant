@@ -47,6 +47,7 @@ struct WeatherTool: AssistantTool {
         if AppleWeather.isAvailable {
             do {
                 let (name, forecast) = try await AppleWeather.forecast(for: place, fahrenheit: fahrenheit)
+                Log.tools.notice("weather: Apple WeatherKit for \(name, privacy: .public)")
                 return ToolResult(Self.answer(forecast, place: name, tomorrow: tomorrow), isAnswer: true)
             } catch {
                 Log.tools.notice("weather: WeatherKit failed (\(error.localizedDescription, privacy: .public)); using Open-Meteo")
@@ -54,6 +55,7 @@ struct WeatherTool: AssistantTool {
         }
         let location = try await OpenMeteo.locate(place)
         let forecast = try await OpenMeteo.forecast(for: location, fahrenheit: fahrenheit)
+        Log.tools.notice("weather: Open-Meteo for \(location.name, privacy: .public)")
         return ToolResult(Self.answer(forecast, place: location.name, tomorrow: tomorrow), isAnswer: true)
     }
 

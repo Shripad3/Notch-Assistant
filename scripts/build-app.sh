@@ -42,13 +42,14 @@ if [[ -f "$profile" ]]; then
   security cms -D -i "$profile" > "$work/profile.plist"
   ent="$work/entitlements.plist"
   plutil -create xml1 "$ent"
-  # Only what the app uses, copied from the profile.
+  # Only what the app uses, copied from the profile. PlistBuddy, not plutil:
+  # plutil reads the dots in these key names as a key path.
   for key in com.apple.application-identifier com.apple.developer.team-identifier; do
     value="$(/usr/libexec/PlistBuddy -c "Print :Entitlements:$key" "$work/profile.plist" 2>/dev/null)" || continue
-    plutil -insert "$key" -string "$value" "$ent"
+    /usr/libexec/PlistBuddy -c "Add :$key string $value" "$ent"
   done
   if [[ "$(/usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.developer.weatherkit" "$work/profile.plist" 2>/dev/null)" == "true" ]]; then
-    plutil -insert com.apple.developer.weatherkit -bool true "$ent"
+    /usr/libexec/PlistBuddy -c "Add :com.apple.developer.weatherkit bool true" "$ent"
   else
     echo "warning: the provisioning profile doesn't include WeatherKit" >&2
   fi
