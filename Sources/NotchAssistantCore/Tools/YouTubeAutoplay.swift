@@ -19,9 +19,40 @@ enum YouTubeAutoplay {
 
     /// The first result's title when it was pressed, or nil when the results
     /// page stays as it is.
-    /// `searchWord` identifies the results tab this command opened, so that
-    /// tab (and only that tab) becomes the video.
-    static func playFirstResult(in app: NSRunningApplication, searchWord: String) async throws -> String? {
+    /// Which tab this command opened, so that tab (and only that tab)
+    /// becomes the video.
+    enum ResultsTab: Sendable {
+        /// Created by script; its id is known exactly.
+        case id(String)
+        /// Opened some other way; found by address.
+        case search(String)
+    }
+
+    /// Opens the results in a new tab of the front window, by script, and
+    /// returns the tab's id. Arc sends links opened by other apps to Little
+    /// Arc, apart from the user's tabs; a scripted tab lands with the rest.
+    /// Nil when the browser isn't scriptable or the script fails.
+    static func openResultsTab(_ url: URL, in app: NSRunningApplication) async -> String? {
+        guard let bundle = app.bundleIdentifier, chromiumBrowsers.contains(bundle) else { return nil }
+        let script = [
+            "tell application id \(AppleScript.quoted(bundle))",
+            "    activate",
+            "    if (count of windows) = 0 then make new window",
+            "    tell front window",
+            "        set resultsTab to make new tab with properties {URL:\(AppleScript.quoted(url.absoluteString))}",
+            "        return (id of resultsTab) as text",
+            "    end tell",
+            "end tell",
+        ].joined(separator: "\n")
+        do {
+            return try await AppleScript.evaluate(script, controlling: app.localizedName ?? "the browser").first
+        } catch {
+            Log.tools.notice("youtube autoplay: couldn't open a tab by script (\(AssistantFailure(error).message, privacy: .public))")
+            return nil
+        }
+    }
+
+    static func playFirstResult(in app: NSRunningApplication, tab: ResultsTab) async throws -> String? {
         guard AXIsProcessTrusted() else {
             Log.tools.notice("youtube autoplay: no Accessibility permission; staying on results")
             return nil
@@ -36,7 +67,7 @@ enum YouTubeAutoplay {
         while ContinuousClock.now < deadline {
             try Task.checkCancellation()
             if let (link, title, url) = firstVideoLink(in: application) {
-                try await open(url, link: link, in: app, searchWord: searchWord)
+                try await open(url, link: link, in: app, tab: tab)
                 // Only claim success once the tab is really on the video.
                 guard try await reachesVideo(application) else {
                     Log.tools.notice("youtube autoplay [\(recipeVersion, privacy: .public)]: \(app.bundleIdentifier ?? "?", privacy: .public) didn't navigate to \(url.absoluteString, privacy: .public)")
@@ -81,13 +112,13 @@ enum YouTubeAutoplay {
     /// "active tab of the front window": Arc had opened the results in
     /// another window, and that replaced the user's own tab (a Claude chat).
     /// If the results tab can't be found, the video opens in a new tab.
-    private static func open(_ url: URL, link: AXUIElement, in app: NSRunningApplication, searchWord: String) async throws {
+    private static func open(_ url: URL, link: AXUIElement, in app: NSRunningApplication, tab: ResultsTab) async throws {
         let bundle = app.bundleIdentifier ?? ""
         let name = app.localizedName ?? "the browser"
         if chromiumBrowsers.contains(bundle) || bundle == "com.apple.Safari" {
             do {
                 let outcome = try await AppleScript.evaluate(
-                    resultsTabScript(bundle: bundle, video: url, searchWord: searchWord),
+                    resultsTabScript(bundle: bundle, video: url, tab: tab),
                     controlling: name
                 )
                 if outcome.first == "replaced" { return }
@@ -104,19 +135,38 @@ enum YouTubeAutoplay {
         _ = AXUIElementPerformAction(link, kAXPressAction as CFString)
     }
 
-    /// Finds the tab showing this command's results, in any window, and
-    /// sends it to the video. Pure, for testing.
-    static func resultsTabScript(bundle: String, video: URL, searchWord: String) -> String {
-        [
+    /// Finds the tab showing this command's results, by id or by address,
+    /// and sends it to the video. Arc keeps tabs in windows, in the spaces of
+    /// windows, and at the application level; all three are searched (the
+    /// ones a browser lacks are skipped). Pure, for testing.
+    static func resultsTabScript(bundle: String, video: URL, tab: ResultsTab) -> String {
+        let matches = switch tab {
+        case .id(let id):
+            "((id of t) as text) is \(AppleScript.quoted(id))"
+        case .search(let word):
+            "(URL of t) contains \"youtube.com/results\" and (URL of t) contains \(AppleScript.quoted(word))"
+        }
+        return [
             "tell application id \(AppleScript.quoted(bundle))",
+            "    set candidates to {}",
             "    repeat with w in windows",
-            "        repeat with t in tabs of w",
-            "            set tabURL to URL of t",
-            "            if tabURL contains \"youtube.com/results\" and tabURL contains \(AppleScript.quoted(searchWord)) then",
-            "                set URL of t to \(AppleScript.quoted(video.absoluteString))",
-            "                return \"replaced\"",
-            "            end if",
-            "        end repeat",
+            "        try",
+            "            set candidates to candidates & (tabs of w)",
+            "        end try",
+            "        try",
+            "            repeat with s in spaces of w",
+            "                set candidates to candidates & (tabs of s)",
+            "            end repeat",
+            "        end try",
+            "    end repeat",
+            "    try",
+            "        set candidates to candidates & tabs",
+            "    end try",
+            "    repeat with t in candidates",
+            "        if \(matches) then",
+            "            set URL of t to \(AppleScript.quoted(video.absoluteString))",
+            "            return \"replaced\"",
+            "        end if",
             "    end repeat",
             "    return \"missing\"",
             "end tell",

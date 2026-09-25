@@ -148,14 +148,16 @@ struct YouTubeResultsTabTests {
 
     /// Only the results tab is ever changed; never the active tab.
     @Test func scriptTargetsTheResultsTab() {
-        let script = YouTubeAutoplay.resultsTabScript(
-            bundle: "company.thebrowser.Browser",
-            video: URL(string: "https://www.youtube.com/watch?v=abc")!,
-            searchWord: "armstrong"
-        )
-        #expect(script.contains("contains \"youtube.com/results\""))
-        #expect(script.contains("contains \"armstrong\""))
-        #expect(!script.contains("active tab"))
-        #expect(!script.contains("current tab"))
+        let video = URL(string: "https://www.youtube.com/watch?v=abc")!
+        let byID = YouTubeAutoplay.resultsTabScript(bundle: "company.thebrowser.Browser", video: video, tab: .id("TAB-42"))
+        #expect(byID.contains("((id of t) as text) is \"TAB-42\""))
+        #expect(byID.contains("spaces of w"))
+        let byAddress = YouTubeAutoplay.resultsTabScript(bundle: "com.google.Chrome", video: video, tab: .search("armstrong"))
+        #expect(byAddress.contains("contains \"youtube.com/results\""))
+        #expect(byAddress.contains("contains \"armstrong\""))
+        for script in [byID, byAddress] {
+            #expect(!script.contains("active tab"))
+            #expect(!script.contains("current tab"))
+        }
     }
 }

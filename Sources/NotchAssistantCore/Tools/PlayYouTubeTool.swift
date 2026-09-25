@@ -42,15 +42,26 @@ struct PlayYouTubeTool: AssistantTool {
         }
         try Task.checkCancellation()
         let spokenBrowser = Browser.grounded(arguments.browser)
+        let what = latest ? "latest “\(arguments.query)” videos" : "“\(arguments.query)”"
+
+        // Tier 2, preferred path: open the results in a tab created by
+        // script, so that exact tab becomes the video (search and video in
+        // one tab). Any failure keeps Tier 1.
+        if YouTubeAutoplay.isEnabled, let app = Browser.runningApp(named: spokenBrowser),
+           let tabID = await YouTubeAutoplay.openResultsTab(url, in: app) {
+            let place = app.localizedName.map { " in \($0)" } ?? ""
+            if let title = try await YouTubeAutoplay.playFirstResult(in: app, tab: .id(tabID)) {
+                return ToolResult("Playing “\(title)”" + place)
+            }
+            return ToolResult("YouTube results for \(what)" + place)
+        }
+
         let browser = try await Browser.open(url, in: spokenBrowser)
         let place = browser.map { " in \($0)" } ?? ""
-
-        // Tier 2: press the first real video. Any failure keeps Tier 1.
         if YouTubeAutoplay.isEnabled, let app = Browser.runningApp(named: spokenBrowser),
-           let title = try await YouTubeAutoplay.playFirstResult(in: app, searchWord: YouTubeAutoplay.searchWord(for: arguments.query)) {
+           let title = try await YouTubeAutoplay.playFirstResult(in: app, tab: .search(YouTubeAutoplay.searchWord(for: arguments.query))) {
             return ToolResult("Playing “\(title)”" + place)
         }
-        let what = latest ? "latest “\(arguments.query)” videos" : "“\(arguments.query)”"
         return ToolResult("YouTube results for \(what)" + place)
     }
 
