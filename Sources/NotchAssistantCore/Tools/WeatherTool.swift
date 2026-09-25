@@ -1,6 +1,10 @@
+import CoreLocation
 import Foundation
 import FoundationModels
+import MapKit
+import Security
 import Synchronization
+import WeatherKit
 
 @Generable
 struct WeatherArguments: Sendable {
@@ -11,9 +15,9 @@ struct WeatherArguments: Sendable {
 }
 
 /// Answers weather questions aloud: now, the day's high and low, and the
-/// chance of rain. Uses Open-Meteo (free, no key, no account): Apple's
-/// WeatherKit needs a paid developer membership this personally-signed app
-/// doesn't have. Only a city name leaves the Mac; no AI runs in the cloud.
+/// chance of rain. Apple WeatherKit when the app is signed with a profile
+/// granting it; otherwise, or if it fails, Open-Meteo (free, no key). Only a
+/// place leaves the Mac; no AI runs in the cloud.
 struct WeatherTool: AssistantTool {
     let name = "getWeather"
     let title = "Weather"
@@ -39,8 +43,17 @@ struct WeatherTool: AssistantTool {
         }
         let tomorrow = arguments.day == "tomorrow"
             && (CommandContext.transcript.map { Grounding.mentions("tomorrow", in: $0) } ?? true)
+        let fahrenheit = WeatherSettings.usesFahrenheit
+        if AppleWeather.isAvailable {
+            do {
+                let (name, forecast) = try await AppleWeather.forecast(for: place, fahrenheit: fahrenheit)
+                return ToolResult(Self.answer(forecast, place: name, tomorrow: tomorrow), isAnswer: true)
+            } catch {
+                Log.tools.notice("weather: WeatherKit failed (\(error.localizedDescription, privacy: .public)); using Open-Meteo")
+            }
+        }
         let location = try await OpenMeteo.locate(place)
-        let forecast = try await OpenMeteo.forecast(for: location, fahrenheit: WeatherSettings.usesFahrenheit)
+        let forecast = try await OpenMeteo.forecast(for: location, fahrenheit: fahrenheit)
         return ToolResult(Self.answer(forecast, place: location.name, tomorrow: tomorrow), isAnswer: true)
     }
 
@@ -54,11 +67,11 @@ struct WeatherTool: AssistantTool {
         let rain = forecast.rainChances.indices.contains(day) ? forecast.rainChances[day] : 0
         let rainNote = rain >= 20 ? " \(rain)% chance of rain." : ""
         if tomorrow {
-            let conditions = describe(forecast.codes.indices.contains(1) ? forecast.codes[1] : forecast.currentCode)
+            let conditions = forecast.conditions.indices.contains(1) ? forecast.conditions[1] : forecast.currentConditions
             return "Tomorrow in \(place): \(conditions), high \(high)°, low \(low)°.\(rainNote)"
         }
         let now = Int(forecast.currentTemperature.rounded())
-        return "It's \(now)° and \(describe(forecast.currentCode)) in \(place). High \(high)°, low \(low)°.\(rainNote)"
+        return "It's \(now)° and \(forecast.currentConditions) in \(place). High \(high)°, low \(low)°.\(rainNote)"
     }
 
     /// WMO weather codes, as Open-Meteo reports them.
@@ -134,12 +147,13 @@ enum OpenMeteo {
         let longitude: Double
     }
 
+    /// Either provider's forecast, in the user's units, conditions in words.
     struct Forecast: Sendable, Equatable {
         let currentTemperature: Double
-        let currentCode: Int
+        let currentConditions: String
         let highs: [Double]
         let lows: [Double]
-        let codes: [Int]
+        let conditions: [String]
         let rainChances: [Int]
     }
 
@@ -186,10 +200,10 @@ enum OpenMeteo {
         let response: Response = try await get(components.url!)
         return Forecast(
             currentTemperature: response.current.temperature_2m,
-            currentCode: response.current.weather_code,
+            currentConditions: WeatherTool.describe(response.current.weather_code),
             highs: response.daily.temperature_2m_max,
             lows: response.daily.temperature_2m_min,
-            codes: response.daily.weather_code,
+            conditions: response.daily.weather_code.map(WeatherTool.describe),
             rainChances: (response.daily.precipitation_probability_max ?? []).map { $0 ?? 0 }
         )
     }
@@ -202,5 +216,52 @@ enum OpenMeteo {
         } catch let error as URLError where error.code == .notConnectedToInternet {
             throw ToolError("The weather needs the internet, and this Mac is offline")
         }
+    }
+}
+
+/// Apple WeatherKit. Needs the com.apple.developer.weatherkit entitlement,
+/// which comes from a provisioning profile embedded at build time
+/// (scripts/build-app.sh); without it WeatherKit calls fail, so the
+/// entitlement is checked first.
+public enum AppleWeather {
+    public static var isAvailable: Bool {
+        guard let task = SecTaskCreateFromSelf(nil) else { return false }
+        let value = SecTaskCopyValueForEntitlement(task, "com.apple.developer.weatherkit" as CFString, nil)
+        return (value as? Bool) == true
+    }
+
+    private static let places = Mutex<[String: (String, CLLocation)]>([:])
+
+    static func forecast(for place: String, fahrenheit: Bool) async throws -> (String, OpenMeteo.Forecast) {
+        let (name, location) = try await locate(place)
+        let (current, daily) = try await WeatherService.shared.weather(for: location, including: .current, .daily)
+        let unit: UnitTemperature = fahrenheit ? .fahrenheit : .celsius
+        let days = Array(daily.forecast.prefix(2))
+        return (name, OpenMeteo.Forecast(
+            currentTemperature: current.temperature.converted(to: unit).value,
+            currentConditions: current.condition.description.lowercased(),
+            highs: days.map { $0.highTemperature.converted(to: unit).value },
+            lows: days.map { $0.lowTemperature.converted(to: unit).value },
+            conditions: days.map { $0.condition.description.lowercased() },
+            rainChances: days.map { Int(($0.precipitationChance * 100).rounded()) }
+        ))
+    }
+
+    /// Apple's geocoder (MapKit), so no third party sees the place either.
+    private static func locate(_ place: String) async throws -> (String, CLLocation) {
+        let key = place.lowercased()
+        if let cached = places.withLock({ $0[key] }) { return cached }
+        guard let request = MKGeocodingRequest(addressString: place),
+              let item = try await request.mapItems.first
+        else { throw ToolError("I couldn't find a place called \(place)") }
+        let found = (item.name ?? place, item.location)
+        places.withLock { $0[key] = found }
+        return found
+    }
+
+    /// Apple's required attribution: its mark and the legal page.
+    public static func attribution() async -> (mark: URL, legal: URL)? {
+        guard isAvailable, let attribution = try? await WeatherService.shared.attribution else { return nil }
+        return (attribution.combinedMarkLightURL, attribution.legalPageURL)
     }
 }

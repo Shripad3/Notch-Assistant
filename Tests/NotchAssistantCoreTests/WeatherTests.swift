@@ -5,7 +5,7 @@ import Testing
 struct WeatherTests {
     let tools = ToolRegistry(tools: ToolRegistry.standard.tools, isEnabled: { _ in true }).enabledTools()
     /// The live values from Open-Meteo for Amsterdam when this was written.
-    let sample = OpenMeteo.Forecast(currentTemperature: 21.5, currentCode: 0, highs: [21.5, 19.4], lows: [11.4, 15.5], codes: [3, 3], rainChances: [0, 45])
+    let sample = OpenMeteo.Forecast(currentTemperature: 21.5, currentConditions: "clear", highs: [21.5, 19.4], lows: [11.4, 15.5], conditions: ["overcast", "overcast"], rainChances: [0, 45])
 
     @Test func todayAnswer() {
         #expect(WeatherTool.answer(sample, place: "Amsterdam", tomorrow: false) == "It's 22° and clear in Amsterdam. High 22°, low 11°.")

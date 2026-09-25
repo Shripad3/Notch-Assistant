@@ -231,8 +231,9 @@ private struct CapabilitiesPane: View {
             } header: {
                 Text("Weather")
             } footer: {
-                Text("Used when you don't name a place. Forecasts come from Open-Meteo (free, no account); only the city name is sent.")
+                Text("Used when you don't name a place. Forecasts come from Apple Weather when the app is signed with a WeatherKit profile, otherwise from Open-Meteo (free, no account). Only the place is sent.")
             }
+            WeatherAttributionRow()
             Section {
                 Toggle("Play the first YouTube result automatically", isOn: $youtubeAutoplay)
             } header: {
@@ -299,6 +300,29 @@ private struct ToolToggle: View {
         case .varies: parts.append("May need permissions")
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+/// Apple Weather's required attribution, shown when WeatherKit is in use.
+private struct WeatherAttributionRow: View {
+    @State private var attribution: (mark: URL, legal: URL)?
+
+    var body: some View {
+        Group {
+            if let attribution {
+                HStack {
+                    AsyncImage(url: attribution.mark) { image in
+                        image.resizable().scaledToFit()
+                    } placeholder: {
+                        Text("Apple Weather")
+                    }
+                    .frame(height: 14)
+                    Spacer()
+                    Link("Other data sources", destination: attribution.legal).font(.caption)
+                }
+            }
+        }
+        .task { attribution = await AppleWeather.attribution() }
     }
 }
 
