@@ -48,6 +48,8 @@ public enum PermissionChecker {
                            link: .automation, status: systemEventsStatus),
             PermissionItem(id: "automation.shortcuts", title: "Automation: Shortcuts", neededFor: "Do Not Disturb",
                            link: .automation, status: shortcutsStatus),
+            PermissionItem(id: "calendars", title: "Calendars", neededFor: "Reading your calendar aloud (Apple Calendar)",
+                           link: .calendars, status: calendars()),
             PermissionItem(id: "reminders", title: "Reminders", neededFor: "Adding reminders by voice",
                            link: .reminders, status: reminders()),
             PermissionItem(id: "notifications", title: "Notifications", neededFor: "Timers and alarms, if the app isn't running when they're due",
@@ -84,6 +86,14 @@ public enum PermissionChecker {
         switch AVCaptureDevice.authorizationStatus(for: type) {
         case .authorized: .granted
         case .notDetermined: .notRequested
+        default: .denied
+        }
+    }
+
+    private static func calendars() -> PermissionStatus {
+        switch EKEventStore.authorizationStatus(for: .event) {
+        case .fullAccess: .granted
+        case .notDetermined: .askedOnFirstUse
         default: .denied
         }
     }

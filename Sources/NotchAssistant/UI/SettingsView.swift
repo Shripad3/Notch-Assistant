@@ -6,7 +6,7 @@ import SwiftUI
 
 /// The panes, in sidebar order.
 private enum SettingsPane: String, CaseIterable, Identifiable {
-    case activation, model, capabilities, routines, clock, files, spotify, permissions, display
+    case activation, model, capabilities, routines, clock, calendar, files, spotify, permissions, display
 
     var id: Self { self }
 
@@ -17,6 +17,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .capabilities: "Capabilities"
         case .routines: "Routines"
         case .clock: "Clock"
+        case .calendar: "Calendar"
         case .files: "Files"
         case .spotify: "Spotify"
         case .permissions: "Permissions"
@@ -31,6 +32,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .capabilities: "square.grid.2x2"
         case .routines: "list.bullet.rectangle"
         case .clock: "alarm"
+        case .calendar: "calendar"
         case .files: "folder"
         case .spotify: "music.note"
         case .permissions: "lock.shield"
@@ -67,6 +69,7 @@ struct SettingsView: View {
         case .capabilities: CapabilitiesPane()
         case .routines: RoutinesPane()
         case .clock: ClockPane(status: status)
+        case .calendar: CalendarPane()
         case .files: FilesPane()
         case .spotify: SpotifyPane()
         case .permissions: PermissionsPane()
@@ -325,6 +328,7 @@ private struct ToolToggle: View {
         case .automation: parts.append("Needs Automation")
         case .accessibility: parts.append("Needs Accessibility")
         case .reminders: parts.append("Needs Reminders")
+        case .calendar: parts.append("Needs your calendar")
         case .varies: parts.append("May need permissions")
         }
         return parts.joined(separator: " · ")

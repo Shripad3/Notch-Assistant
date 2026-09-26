@@ -359,6 +359,7 @@ Every tool conforms to `AssistantTool`: a name, a description the model reads, a
 | `stopwatch` | `action` | No | None | n/a | after v3 |
 | `reminder` | `task`, `when?` | No | Reminders | n/a | after v3 |
 | `currentTime` | `what`, `place?` | Only for a place | None | n/a | after v3 |
+| `calendar` | `action`, `when?` | Google/Outlook only | Calendar | n/a — read-only | after v3 |
 
 This table will grow. Two columns are load-bearing for any tool added later: `Reversible`, which drives the undo journal (§9.6), and `Permission`, which generates the settings toggle and the permissions check automatically (§9.8).
 
@@ -442,6 +443,18 @@ AlarmKit does not exist on macOS, so the app rings timers and alarms itself.
 **Beside the notch.** While a timer or the stopwatch runs, and nothing else is showing, the notch stays in its compact form: a timer glyph on the left and the countdown on the right. Hovering expands it into every timer and the stopwatch, each with pause/resume and cancel. This is the one exception to "Idle is hidden" (§4); it can be turned off in the Display pane.
 
 **Menu bar.** The soonest running timer, or else a running stopwatch, counts down beside the icon. The menu lists each timer (pause, resume, cancel), alarm (cancel) and the stopwatch (stop, resume, reset). The display ticks once a second only while something is running.
+
+### calendar
+
+Reads the connected calendar aloud: "what's on my calendar tomorrow", "when's my next meeting", "am I free at 3". **Read-only**: there is no operation that creates, changes or deletes an event. One provider at a time, chosen in Settings › Calendar; connecting one disconnects the others.
+
+| Provider | How | What the user sets up |
+| --- | --- | --- |
+| Apple Calendar (default) | EventKit | Nothing but the Calendars permission. Google, Exchange and iCloud accounts added in System Settings › Internet Accounts are included, so this also covers those |
+| Google Calendar | Calendar API v3, scope `calendar.readonly`, every calendar ticked in Google Calendar | Their own OAuth client (type Desktop app) in Google Cloud: client ID and secret. Publishing status "In production", or Google expires the sign-in weekly |
+| Outlook | Microsoft Graph `calendarView`, scope `Calendars.Read`, tenant `common` | Their own app registration (public client, redirect `http://localhost`): client ID only |
+
+Google and Outlook sign in with `OAuthSession`, which is shared: Authorization Code with PKCE and a loopback redirect. The listener binds 127.0.0.1 and ::1 only, for the length of the sign-in. Tokens, and Google's client secret, live in the Keychain. No app-owned credentials exist, so nothing needs to be kept secret in the public repository.
 
 ### Routines
 
@@ -606,6 +619,7 @@ The tool registry therefore reads settings at session construction, every time.
 | Capabilities | One toggle per tool, generated from registry metadata; search engine; YouTube autoplay; weather city and attribution |
 | Routines | The user's routines: phrases, numbered steps (reordered with up/down arrows), closing line; on/off per routine; examples to start from |
 | Clock | Alarm and timer sounds (system sounds) with a Test button that rings the notch for real; running timers beside the notch on/off |
+| Calendar | Which calendar to read (Apple / Google / Outlook), setup steps, sign in and out |
 | Files | Scoped roots; undo history; the fixed statement of what the agent cannot do |
 | Spotify | Web API client ID and sign-in |
 | Permissions | Live status per grant, with deep links |
@@ -624,6 +638,7 @@ Five separate grants, each of which will at some point be missing or revoked. Sh
 | Accessibility | In-page navigation, simulated brightness and lock keys | `...?Privacy_Accessibility` |
 | Automation | Spotify, volume, browser tabs, Shortcuts (DND, routines) | `...?Privacy_Automation` |
 | Reminders | Adding reminders by voice | `...?Privacy_Reminders` |
+| Calendars | Reading the calendar (Apple Calendar provider) | `...?Privacy_Calendars` |
 | Notifications | Backup for timers and alarms when the app isn't running | Notifications settings |
 | Files and Folders | File search, open, rename, move (metadata only; never contents) | ...?Privacy\_FilesAndFolders |
 
@@ -688,6 +703,7 @@ Sources/
                              Spotify/, Files/ (FileAccess, FileTokens, FileJournal, FileOrganizer)
     Routines/                Routine, Routines (matching, planning, examples)
     Clock/                   SpokenTime (parsing), ClockStore, ClockTools, ReminderTool
+    Calendar/                CalendarTool, CalendarSources (Apple, Google, Outlook), OAuthSession
     Display/  Permissions/  Power/  Support/
   PlanCLI/                   type a command, see the plan (no microphone needed)
 Vendor/DynamicNotchKit/      patched copy, see PATCHES.md
@@ -709,7 +725,7 @@ Everything else is a system framework: `FoundationModels`, `Speech`, `AVFoundati
 
 ### Info.plist keys
 
-`NSMicrophoneUsageDescription`, `NSCameraUsageDescription`, `NSSpeechRecognitionUsageDescription`, `NSDesktopFolderUsageDescription`, `NSDocumentsFolderUsageDescription`, `NSDownloadsFolderUsageDescription`, `NSRemindersFullAccessUsageDescription`, and `NSAppleEventsUsageDescription`. `LSUIElement` set to true.
+`NSMicrophoneUsageDescription`, `NSCameraUsageDescription`, `NSSpeechRecognitionUsageDescription`, `NSDesktopFolderUsageDescription`, `NSDocumentsFolderUsageDescription`, `NSDownloadsFolderUsageDescription`, `NSRemindersFullAccessUsageDescription`, `NSCalendarsFullAccessUsageDescription`, and `NSAppleEventsUsageDescription`. `LSUIElement` set to true.
 
 `NSAppleEventsUsageDescription` is a single string covering all Apple Events the app sends, so it cannot name Spotify and the browser separately. Write one sentence that covers both honestly — macOS shows this text on the first Automation prompt, and the per-application grant is handled by the system, not by additional keys.
 
@@ -757,7 +773,8 @@ Wake word, endpointing, power profiles, file search and open, `controlSpotify`, 
 
 - **Weather** (`getWeather`): WeatherKit with an Open-Meteo fallback.
 - **Routines** and **`runShortcut`**: multi-step phrases, lights through Shortcuts.
-- **Clock**: timers, alarms, stopwatch, reminders and the time (§9).
+- **Clock**: timers, alarms (one-off and repeating), stopwatch, reminders and the time (§9).
+- **Calendar**: read-only, from Apple Calendar, Google Calendar or Outlook (§9).
 
 Candidates next:
 
@@ -791,7 +808,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 240 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 255 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist
@@ -858,6 +875,7 @@ These are the invariants. If a future change violates one, the change is wrong, 
 - Tier 2 in-page navigation always falls back to Tier 1 (§9), and never changes a tab it did not open.
 - A spoken command's arguments must have been said; the model cannot introduce a URL, app, song, place or file on its own (§8).
 - Routines cannot change files (§9).
+- The calendar is read-only; no tool creates, changes or deletes an event (§9).
 
 ## Sources
 

@@ -20,6 +20,7 @@ public struct ToolRegistry: Sendable {
         AnyAssistantTool(StopwatchTool()),
         AnyAssistantTool(ReminderTool()),
         AnyAssistantTool(CurrentTimeTool()),
+        AnyAssistantTool(CalendarTool()),
         AnyAssistantTool(OpenAppTool()),
         AnyAssistantTool(OpenURLTool()),
         // Before Spotify and files: "play … on YouTube" and "… video" are its.
