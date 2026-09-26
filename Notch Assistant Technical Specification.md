@@ -410,7 +410,7 @@ Each routine has:
 
 - a name;
 - one or more trigger phrases;
-- an ordered list of steps;
+- an ordered list of steps, run top to bottom and reordered in Settings with up/down arrows;
 - an optional closing line.
 
 | Step | Runs as |
@@ -559,7 +559,7 @@ The tool registry therefore reads settings at session construction, every time.
 | Activation | Hotkey (⌥Space, hold to talk); wake word on/off, engine (speech / model), accent, sensitivity; auto-switch power profiles |
 | Model & Voice | Apple Intelligence status; voice picker with preview; speak responses (Always / Errors only / Never); duck audio while listening |
 | Capabilities | One toggle per tool, generated from registry metadata; search engine; YouTube autoplay; weather city and attribution |
-| Routines | The user's routines: phrases, steps, closing line; on/off per routine; examples to start from |
+| Routines | The user's routines: phrases, numbered steps (reordered with up/down arrows), closing line; on/off per routine; examples to start from |
 | Files | Scoped roots; undo history; the fixed statement of what the agent cannot do |
 | Spotify | Web API client ID and sign-in |
 | Permissions | Live status per grant, with deep links |
