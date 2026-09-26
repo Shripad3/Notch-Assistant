@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var wakeEvents: AsyncStream<ActivationEvent>.Continuation?
     private var wakeTask: Task<Void, Never>?
     private let clockNotifier = SystemClockNotifier()
+    static let gesturesKey = "gesture.enabled"
+    private var gestures: GestureListener?
 
     func showSettings() {
         settings.show()
@@ -62,7 +64,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         display.onChange = { [weak self] in self?.environmentChanged() }
         let power = PowerProfileMonitor()
         self.power = power
-        power.onChange = { [weak self] in self?.updateWakeWord() }
+        power.onChange = { [weak self] in
+            self?.updateWakeWord()
+            self?.updateGestures()
+        }
         let (wakeStream, wakeContinuation) = AsyncStream<ActivationEvent>.makeStream()
         wakeEvents = wakeContinuation
         wakeTask = Task {
@@ -73,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         status.onPausedChange = { [weak self] in
             self?.updateSuspension()
             self?.updateWakeWord()
+            self?.updateGestures()
         }
         status.onSelect = { id in Task { await coordinator.select(id) } }
         status.onConfirm = { confirmed in Task { await coordinator.resolveConfirmation(confirmed) } }
@@ -184,6 +190,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notch?.environmentChanged()
         updateSuspension()
         updateWakeWord()
+        updateGestures()
+    }
+
+    /// Starts or stops the camera for hand gestures (spec §6): only when
+    /// enabled, not paused, and (with auto-switching) plugged in and cool.
+    private func updateGestures() {
+        guard let power else { return }
+        let enabled = UserDefaults.standard.bool(forKey: Self.gesturesKey)
+        let reason: String? = if !enabled {
+            nil
+        } else if status.isPaused {
+            "listening is paused"
+        } else if status.isSuspendedByDisplay {
+            "no built-in display"
+        } else if PowerProfileMonitor.autoSwitch {
+            power.profile.pauseReason
+        } else {
+            nil
+        }
+        let wanted = enabled && reason == nil
+        guard wanted != (gestures != nil) else {
+            if !wanted { status.gestureStatus = enabled ? "Paused: \(reason ?? "")" : "Off" }
+            return
+        }
+        guard wanted else {
+            gestures?.stop()
+            gestures = nil
+            status.gestureStatus = enabled ? "Paused: \(reason ?? "")" : "Off"
+            return
+        }
+        let events = wakeEvents
+        let listener = GestureListener { gesture in
+            switch gesture {
+            case .openPalm: events?.yield(.wake(.gesture()))
+            case .fist: events?.yield(.cancelled)
+            }
+        }
+        gestures = listener
+        status.gestureStatus = "Starting the camera…"
+        Task { [weak self] in
+            do {
+                try await listener.start()
+                self?.status.gestureStatus = "Watching for gestures"
+            } catch {
+                self?.status.gestureStatus = "Unavailable: \(AssistantFailure(error).message)"
+                if self?.gestures === listener { self?.gestures = nil }
+            }
+        }
     }
 
     /// Starts or stops hands-free listening from the setting, the power

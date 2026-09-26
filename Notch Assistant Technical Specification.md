@@ -2,7 +2,7 @@
 
 Sep 24, 2026 · @Batman · updated Sep 26, 2026 to match the build
 
-> **Status.** v0–v3 are built and in daily use, plus weather, routines and the clock (timers, alarms, stopwatch, reminders), which were not in the original plan. v4 (gestures) has not started. Where the build departs from the original design, the section says so, and §1.4 lists every departure in one place. The assistant is called **Alfred**, after its wake word.
+> **Status.** v0–v4 are built. Beyond the original plan, it also has weather, routines, the clock (timers, alarms, stopwatch, reminders), the calendar, desktop tools (windows, clipboard, notes) and a natural voice (Kokoro). Gestures (v4) are built but untested with a real camera at the time of writing. Where the build departs from the original design, the section says so, and §1.4 lists every departure in one place. The assistant is called **Alfred**, after its wake word.
 
 ## Overview and goals
 
@@ -244,6 +244,20 @@ Vision's hand-pose request over the front camera. This is the one genuinely expe
 - The camera indicator light stays lit the entire time, which is intrusive on a machine used all day.
 
 Mitigations, all required if the feature ships: cap capture at 10 fps, downscale frames before inference, require a two-frame confirmation before firing to suppress false positives, and auto-disable when on battery (§11). Start with two gestures only — open palm to activate, closed fist to cancel.
+
+**As built (`GestureListener`):**
+
+- **Capture:** the front camera at 640×480; frames past 10 per second are dropped before Vision sees them.
+- **Detection:** `VNDetectHumanHandPoseRequest` finds at most one hand, keeping joints with confidence > 0.5.
+- **Classification** (`HandJoints`, from the four fingers, ignoring the thumb):
+  - *open palm* when every fingertip is well beyond both its middle joint and its knuckle, measured from the wrist;
+  - *fist* when every fingertip is nearer the wrist than its middle joint.
+- **Confirmation:** stricter than the two frames above. A gesture must be held for 5 consecutive frames (half a second), then there is a 3 s cooldown (`GestureDebouncer`).
+- **What each does:**
+  - An open palm starts a hands-free session like the wake word, but with no pre-roll, and the endpointer measures the room itself.
+  - A fist is the same as Escape.
+- **Off by default.** It is also paused, like the wake word, on battery, when hot, with the kill switch, or with no built-in display.
+- **Privacy:** nothing is recorded or stored.
 
 ### Arbitration
 
@@ -632,7 +646,7 @@ The tool registry therefore reads settings at session construction, every time.
 
 | Pane | Contents (as built) |
 | --- | --- |
-| Activation | Open at login (on by default, so alarms ring); hotkey (⌥Space, hold to talk); wake word on/off, engine (speech / model), accent, sensitivity; auto-switch power profiles |
+| Activation | Open at login (on by default, so alarms ring); hand gestures on/off with status; hotkey (⌥Space, hold to talk); wake word on/off, engine (speech / model), accent, sensitivity; auto-switch power profiles |
 | Model & Voice | Apple Intelligence status; voice picker (Kokoro natural voices and system voices) with preview and the Kokoro download; speak responses (Always / Errors only / Never); duck audio while listening |
 | Capabilities | One toggle per tool, generated from registry metadata; search engine; YouTube autoplay; weather city and attribution |
 | Routines | The user's routines: phrases, numbered steps (reordered with up/down arrows), closing line; on/off per routine; examples to start from |
@@ -652,7 +666,7 @@ Five separate grants, each of which will at some point be missing or revoked. Sh
 | Permission | Needed for | Deep link |
 | --- | --- | --- |
 | Microphone | All voice input | `...?Privacy_Microphone` |
-| Camera | Gestures only | `...?Privacy_Camera` |
+| Camera | Gestures only (off by default) | `...?Privacy_Camera` |
 | Accessibility | In-page navigation, simulated brightness, lock and paste keys, arranging windows | `...?Privacy_Accessibility` |
 | Automation | Spotify, browser tabs, Shortcuts (DND, routines), Notes (quick notes), System Events (sleep) | `...?Privacy_Automation` |
 | Reminders | Adding reminders by voice | `...?Privacy_Reminders` |
@@ -744,7 +758,7 @@ Everything else is a system framework: `FoundationModels`, `Speech`, `AVFoundati
 
 ### Info.plist keys
 
-`NSMicrophoneUsageDescription`, `NSCameraUsageDescription`, `NSSpeechRecognitionUsageDescription`, `NSDesktopFolderUsageDescription`, `NSDocumentsFolderUsageDescription`, `NSDownloadsFolderUsageDescription`, `NSRemindersFullAccessUsageDescription`, `NSCalendarsFullAccessUsageDescription`, and `NSAppleEventsUsageDescription`. `LSUIElement` set to true.
+`NSMicrophoneUsageDescription`, `NSCameraUsageDescription` (gestures), `NSSpeechRecognitionUsageDescription`, `NSDesktopFolderUsageDescription`, `NSDocumentsFolderUsageDescription`, `NSDownloadsFolderUsageDescription`, `NSRemindersFullAccessUsageDescription`, `NSCalendarsFullAccessUsageDescription`, and `NSAppleEventsUsageDescription`. `LSUIElement` set to true.
 
 `NSAppleEventsUsageDescription` is a single string covering all Apple Events the app sends, so it cannot name Spotify and the browser separately. Write one sentence that covers both honestly — macOS shows this text on the first Automation prompt, and the per-application grant is handled by the system, not by additional keys.
 
@@ -807,6 +821,8 @@ Vision hand pose, two gestures, all the mitigations in §6.
 
 **Done when:** gestures work at arm's length in normal room lighting, and enabling them does not make the machine warm at idle.
 
+**Status: built**, with the classifier and debouncer unit-tested. The "done when" criteria need checking with a real camera.
+
 ### Sequencing rationale
 
 ```mermaid
@@ -828,7 +844,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 265 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 270 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist

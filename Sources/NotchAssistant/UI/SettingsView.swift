@@ -89,6 +89,7 @@ private struct ActivationPane: View {
     @AppStorage(SpeechWakeListener.localeKey) private var accent = ""
     @State private var models: [String] = []
     @State private var accents: [Locale] = []
+    @AppStorage(AppDelegate.gesturesKey) private var gesturesEnabled = false
     @State private var openAtLogin = LoginItem.isEnabled || LoginItem.needsApproval
     @State private var loginNeedsApproval = LoginItem.needsApproval
 
@@ -111,6 +112,16 @@ private struct ActivationPane: View {
                 }
             } footer: {
                 Text("Timers and alarms only ring while Notch Assistant is running.")
+            }
+            Section {
+                Toggle("Hand gestures", isOn: $gesturesEnabled)
+                if gesturesEnabled {
+                    LabeledContent("Status", value: status.gestureStatus)
+                }
+            } header: {
+                Text("Gestures")
+            } footer: {
+                Text("Hold an open palm towards the camera for half a second to start listening, like saying “Alfred”. Make a fist to cancel, like Escape. Uses the camera continuously, so its green light stays on and it costs more energy than the wake word; it pauses on battery and when the Mac is hot. Nothing is recorded or stored.")
             }
             Section {
                 LabeledContent("Hold to talk", value: "⌥ Space")

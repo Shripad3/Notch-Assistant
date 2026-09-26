@@ -51,7 +51,7 @@ public actor SystemSTT: TranscriptionService {
             request.append(buffer)
         }
         AudioDucker.duck()
-        let sink = BufferSink(request, endpointer: wake.map { Endpointer(ambientFloor: $0.ambientFloor) })
+        let sink = BufferSink(request, endpointer: wake.map { Endpointer(ambientFloor: $0.ambientFloor.isNaN ? nil : $0.ambientFloor) })
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
             let decibels = Self.decibels(of: buffer)
             onUpdate(.level(Self.level(fromDecibels: decibels)))

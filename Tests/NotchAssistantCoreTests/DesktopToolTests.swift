@@ -99,3 +99,51 @@ struct ClipboardAndNoteTests {
         #expect(DirectMatcher.plan(for: said, tools: ToolRegistry.standard.tools)?.steps.first?.tool.name == tool)
     }
 }
+
+struct GestureTests {
+    /// A hand pointing up (Vision's coordinates: y grows upwards).
+    static func hand(extended: Bool) -> HandJoints {
+        let wrist = CGPoint(x: 0.5, y: 0.2)
+        let fingers = [0.44, 0.48, 0.52, 0.56].map { x -> HandJoints.Finger in
+            let mcp = CGPoint(x: x, y: 0.35)
+            let pip = CGPoint(x: x, y: 0.45)
+            let tip = extended ? CGPoint(x: x, y: 0.55) : CGPoint(x: x, y: 0.38)
+            return .init(tip: tip, pip: pip, mcp: mcp)
+        }
+        return HandJoints(wrist: wrist, fingers: fingers)
+    }
+
+    @Test func classifies() {
+        #expect(Self.hand(extended: true).gesture() == .openPalm)
+        #expect(Self.hand(extended: false).gesture() == .fist)
+    }
+
+    @Test func halfCurledIsNeither() {
+        var fingers = Self.hand(extended: true).fingers
+        fingers[1] = Self.hand(extended: false).fingers[1]
+        #expect(HandJoints(wrist: CGPoint(x: 0.5, y: 0.2), fingers: fingers).gesture() == nil)
+    }
+
+    @Test func needsToBeHeldThenCoolsDown() {
+        var debouncer = GestureDebouncer()
+        let start = Date()
+        var fired: [HandGesture] = []
+        for frame in 0..<10 {
+            if let gesture = debouncer.feed(.openPalm, at: start.addingTimeInterval(Double(frame) * 0.1)) { fired.append(gesture) }
+        }
+        #expect(fired == [.openPalm]) // once, after 5 frames, then cooling down
+        #expect(debouncer.feed(.fist, at: start.addingTimeInterval(1.5)) == nil)
+        for frame in 0..<5 {
+            if let gesture = debouncer.feed(.fist, at: start.addingTimeInterval(4 + Double(frame) * 0.1)) { fired.append(gesture) }
+        }
+        #expect(fired == [.openPalm, .fist])
+    }
+
+    @Test func aGapResetsTheCount() {
+        var debouncer = GestureDebouncer()
+        let start = Date()
+        for frame in 0..<4 { _ = debouncer.feed(.openPalm, at: start.addingTimeInterval(Double(frame) * 0.1)) }
+        #expect(debouncer.feed(nil, at: start.addingTimeInterval(0.4)) == nil)
+        #expect(debouncer.feed(.openPalm, at: start.addingTimeInterval(0.5)) == nil)
+    }
+}

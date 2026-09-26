@@ -35,6 +35,8 @@ final class StatusModel {
     var isSuspendedByDisplay = false
     /// Hands-free listening, for the menu bar and Settings.
     var wakeStatus: WakeStatus = .off
+    /// Hand gestures, for Settings: "Off", "Watching for gestures", …
+    var gestureStatus = "Off"
     /// A row of a result list was clicked; its opaque id goes to the coordinator.
     @ObservationIgnored var onSelect: ((String) -> Void)?
     /// The Confirm (true) or Cancel (false) button for a batch of changes.

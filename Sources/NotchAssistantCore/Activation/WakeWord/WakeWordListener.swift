@@ -16,6 +16,12 @@ public final class WakeContext: @unchecked Sendable, Equatable {
     /// transcribed the wake word: no second confirmation is needed.
     public let confirmed: Bool
 
+    /// A hands-free start with no wake word (an open-palm gesture): no
+    /// pre-roll, and the endpointer measures the room itself.
+    public static func gesture() -> WakeContext {
+        WakeContext(preroll: [], ambientFloor: .nan, score: 1, confirmed: true)
+    }
+
     init(preroll: [AVAudioPCMBuffer], ambientFloor: Float, score: Float, confirmed: Bool = false) {
         self.preroll = preroll
         self.ambientFloor = ambientFloor
