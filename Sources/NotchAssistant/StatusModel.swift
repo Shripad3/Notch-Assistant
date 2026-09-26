@@ -67,6 +67,16 @@ final class StatusModel {
         ticker = timer
     }
 
+    static let notchCountdownKey = "clock.showInNotch"
+
+    /// The countdown pill beside the notch while idle: the soonest running
+    /// timer, else a running stopwatch.
+    var notchCountdown: (symbol: String, text: String)? {
+        guard UserDefaults.standard.object(forKey: Self.notchCountdownKey) as? Bool ?? true,
+              let text = menuBarCountdown else { return nil }
+        return (clock.timers.contains { !$0.isPaused } ? "timer" : "stopwatch", text)
+    }
+
     /// Shown beside the menu bar icon: the soonest running timer, else a
     /// running stopwatch.
     var menuBarCountdown: String? {

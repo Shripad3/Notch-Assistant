@@ -16,8 +16,14 @@ struct NotchLeadingView: View {
     let status: StatusModel
 
     var body: some View {
-        StateGlyph(state: status.state)
-            .font(.system(size: 13, weight: .semibold))
+        if status.state == .idle, let countdown = status.notchCountdown {
+            Image(systemName: countdown.symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.orange)
+        } else {
+            StateGlyph(state: status.state)
+                .font(.system(size: 13, weight: .semibold))
+        }
     }
 }
 
@@ -32,6 +38,14 @@ struct NotchTrailingView: View {
                 AudioBars(level: status.level)
             case .thinking, .acting:
                 Shimmer()
+            case .idle:
+                if let countdown = status.notchCountdown {
+                    Text(countdown.text)
+                        .font(.system(size: 13, weight: .semibold))
+                        .monospacedDigit()
+                        .contentTransition(.numericText(countsDown: true))
+                        .animation(.default, value: countdown.text)
+                }
             default:
                 EmptyView()
             }
@@ -46,7 +60,11 @@ struct NotchExpandedView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            row
+            if status.state == .idle {
+                ClockList(status: status)
+            } else {
+                row
+            }
             if case .list(_, let items) = status.state {
                 ResultList(items: items) { status.onSelect?($0) }
             }
@@ -250,5 +268,58 @@ struct Shimmer: View {
             .font(.system(size: 13, weight: .bold))
             .foregroundStyle(.white)
             .symbolEffect(.variableColor.iterative, options: .repeating)
+    }
+}
+
+/// The expanded countdown pill: every running timer and the stopwatch,
+/// each with a way to stop it.
+private struct ClockList: View {
+    let status: StatusModel
+    private let store = ClockStore.shared
+
+    var body: some View {
+        VStack(spacing: 2) {
+            ForEach(status.clock.timers) { timer in
+                row(symbol: "timer", title: timer.name.prefix(1).uppercased() + timer.name.dropFirst(),
+                    detail: ClockFormat.clock(timer.remaining(at: status.now)) + (timer.isPaused ? " · paused" : ""),
+                    pause: { timer.isPaused ? store.resume(timer.id) : store.pause(timer.id) },
+                    paused: timer.isPaused,
+                    remove: { store.remove([timer.id]) })
+            }
+            if !status.clock.stopwatch.isIdle {
+                let watch = status.clock.stopwatch
+                row(symbol: "stopwatch", title: "Stopwatch",
+                    detail: ClockFormat.stopwatch(watch.elapsed(at: status.now)) + (watch.isRunning ? "" : " · stopped"),
+                    pause: { store.toggleStopwatch() },
+                    paused: !watch.isRunning,
+                    remove: { store.resetStopwatch() })
+            }
+        }
+    }
+
+    private func row(symbol: String, title: String, detail: String, pause: @escaping () -> Void, paused: Bool, remove: @escaping () -> Void) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.orange)
+                .frame(width: 22)
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text(detail)
+                .font(.system(size: 13))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            Button(action: pause) { Image(systemName: paused ? "play.fill" : "pause.fill") }
+                .buttonStyle(.borderless)
+                .help(paused ? "Resume" : "Pause")
+            Button(action: remove) { Image(systemName: "xmark.circle.fill") }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help("Cancel")
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 3)
     }
 }

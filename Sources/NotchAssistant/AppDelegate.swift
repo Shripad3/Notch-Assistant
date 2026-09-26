@@ -78,7 +78,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         status.onAlert = { snooze in Task { await coordinator.resolveAlert(snooze: snooze) } }
         ClockStore.shared.start(
             notifier: clockNotifier,
-            onChange: { [status] snapshot in Task { @MainActor in status.clock = snapshot } },
+            onChange: { [status] snapshot in
+                Task { @MainActor in
+                    status.clock = snapshot
+                    notch.clockChanged()
+                }
+            },
             onFire: { alert in Task { await coordinator.ring(alert) } }
         )
         // The display fallback setting lives in UserDefaults.

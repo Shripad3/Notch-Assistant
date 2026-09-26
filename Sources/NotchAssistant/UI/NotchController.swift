@@ -104,8 +104,19 @@ final class NotchController: NotchPresenter {
         }
     }
 
+    /// Timers changed: the countdown pill may appear or go.
+    func clockChanged() {
+        refresh()
+    }
+
     private func desiredPresentation() -> Presentation {
-        guard status.state != .idle else { return .hidden }
+        guard status.state != .idle else {
+            // Idle with a running timer: a small countdown beside the notch,
+            // expanding to the list of timers while hovered. Only on a real
+            // notch; the floating fallback has no compact form.
+            guard status.notchCountdown != nil, let screen = display.targetScreen else { return .hidden }
+            return Presentation(mode: notch.isHovering ? .expanded : .compact, displayID: screen.displayID)
+        }
 
         if let screen = display.targetScreen {
             let mode: Mode = switch status.state {

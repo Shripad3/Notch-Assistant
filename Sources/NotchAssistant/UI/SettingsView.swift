@@ -529,9 +529,15 @@ private struct PermissionsPane: View {
 
 private struct DisplayPane: View {
     @AppStorage(DisplayFallback.defaultsKey) private var fallback = DisplayFallback.hide.rawValue
+    @AppStorage(StatusModel.notchCountdownKey) private var notchCountdown = true
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Show running timers beside the notch", isOn: $notchCountdown)
+            } footer: {
+                Text("A small countdown sits next to the notch while a timer or the stopwatch runs. Hover over it to see every timer.")
+            }
             Section {
                 Picker("When there's no notched display", selection: $fallback) {
                     ForEach(DisplayFallback.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }

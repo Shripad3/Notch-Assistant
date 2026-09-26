@@ -439,6 +439,8 @@ AlarmKit does not exist on macOS, so the app rings timers and alarms itself.
 
 **When the app isn't running.** Each timer and alarm also has a notification (UserNotifications) scheduled 5 s after it is due. The app withdraws it when it rings the timer or alarm itself. On relaunch, anything more than 5 minutes overdue is dropped, since the notification already told the user.
 
+**Beside the notch.** While a timer or the stopwatch runs, and nothing else is showing, the notch stays in its compact form: a timer glyph on the left and the countdown on the right. Hovering expands it into every timer and the stopwatch, each with pause/resume and cancel. This is the one exception to "Idle is hidden" (§4); it can be turned off in the Display pane.
+
 **Menu bar.** The soonest running timer, or else a running stopwatch, counts down beside the icon. The menu lists each timer (pause, resume, cancel), alarm (cancel) and the stopwatch (stop, resume, reset). The display ticks once a second only while something is running.
 
 ### Routines
@@ -606,7 +608,7 @@ The tool registry therefore reads settings at session construction, every time.
 | Files | Scoped roots; undo history; the fixed statement of what the agent cannot do |
 | Spotify | Web API client ID and sign-in |
 | Permissions | Live status per grant, with deep links |
-| Display | Fallback when no notched screen (Hide / Floating / Disable) |
+| Display | Running timers beside the notch on/off; fallback when no notched screen (Hide / Floating / Disable) |
 
 Gesture settings arrive with v4.
 
