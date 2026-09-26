@@ -468,7 +468,11 @@ AlarmKit does not exist on macOS, so the app rings timers and alarms itself.
 
 **Beside the notch.** While a timer or the stopwatch runs, and nothing else is showing, the notch stays in its compact form: a timer glyph on the left and the countdown on the right. Hovering expands it into every timer and the stopwatch, each with pause/resume and cancel. This is the one exception to "Idle is hidden" (§4); it can be turned off in the Display pane.
 
-**Menu bar.** The soonest running timer, or else a running stopwatch, counts down beside the icon. The menu lists each timer (pause, resume, cancel), alarm (cancel) and the stopwatch (stop, resume, reset). The display ticks once a second only while something is running.
+**Several steps in one sentence.** "Wake me up at seven on weekdays and eight on weekends" is planned by the model as two alarm steps, and the model rewords them ("every weekday", "weekends at 8 am"). A reworded value is kept when it means what the user said: the same time among the times said, days within the days said, or a length among the lengths said. The whole sentence is only re-read when it holds a single time or duration, so parts of a multi-step request are never merged.
+
+**Spoken times with the natural voice.** Kokoro's phonemiser reads "07:00" and "18:30" as "ex: ex", "AM" as the word "am", and drops "°", "%" and the minus sign. `SpeechText.forNeuralVoice` rewrites display text before Kokoro speaks it: "07:00" becomes "7 A M" (24-hour times are read as 12-hour with AM/PM), "18:30" becomes "6 30 PM", and it adds "degrees", "percent" and "minus". The system voices get the text unchanged.
+
+**Menu bar.** The soonest running timer, or else a running stopwatch, counts down beside the icon. The menu lists each timer (pause, resume, cancel), alarm (turn off or on, delete) and the stopwatch (stop, resume, reset). The display ticks once a second only while something is running.
 
 ### calendar
 
@@ -650,7 +654,7 @@ The tool registry therefore reads settings at session construction, every time.
 | Model & Voice | Apple Intelligence status; voice picker (Kokoro natural voices and system voices) with preview and the Kokoro download; speak responses (Always / Errors only / Never); duck audio while listening |
 | Capabilities | One toggle per tool, generated from registry metadata; search engine; YouTube autoplay; weather city and attribution |
 | Routines | The user's routines: phrases, numbered steps (reordered with up/down arrows), closing line; on/off per routine; examples to start from |
-| Clock | Alarm and timer sounds (system sounds) with a Test button that rings the notch for real; running timers beside the notch on/off |
+| Clock | Every alarm, each with an on/off switch (off alarms are kept but never ring), edit (time, name, days) and delete, plus Add Alarm; alarm and timer sounds with a Test button that rings the notch for real; running timers beside the notch on/off |
 | Calendar | Which calendar to read (Apple / Google / Outlook), setup steps, sign in and out |
 | Files | Scoped roots; undo history; the fixed statement of what the agent cannot do |
 | Spotify | Web API client ID and sign-in |
@@ -844,7 +848,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 270 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 280 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist

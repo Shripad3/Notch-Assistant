@@ -17,7 +17,13 @@ public struct Countdown: Codable, Sendable, Identifiable, Equatable {
     /// A repeating alarm's days, 1 = Sunday … 7 = Saturday.
     public var repeatDays: Set<Int>?
 
+    /// An alarm switched off in Settings: kept, but never rings.
+    public var disabled: Bool?
+
     public var isPaused: Bool { pausedRemaining != nil }
+    public var isEnabled: Bool { disabled != true }
+    /// Counting down to ring: not paused, not switched off.
+    public var isArmed: Bool { !isPaused && isEnabled }
 
     public func remaining(at now: Date = Date()) -> TimeInterval {
         pausedRemaining ?? max(0, fireDate.timeIntervalSince(now))
@@ -169,7 +175,7 @@ public final class ClockStore: Sendable {
         // Long overdue (the app wasn't running): the notification told the
         // user already; ringing now, hours late, would only confuse.
         let now = Date()
-        state.withLock { $0.countdowns.removeAll { !$0.isPaused && $0.fireDate < now.addingTimeInterval(-Self.staleAfter) } }
+        state.withLock { $0.countdowns.removeAll { $0.isArmed && $0.fireDate < now.addingTimeInterval(-Self.staleAfter) } }
         changed()
     }
 
@@ -189,6 +195,54 @@ public final class ClockStore: Sendable {
         let timer = Countdown(id: UUID(), kind: .timer, label: label, fireDate: now.addingTimeInterval(seconds), duration: seconds)
         mutate { $0.countdowns.append(timer) }
         return timer
+    }
+
+    /// Switches an alarm on or off without deleting it. Switching on moves
+    /// it to the next time it can ring.
+    public func setEnabled(_ id: UUID, _ enabled: Bool, now: Date = Date()) {
+        mutate { state in
+            guard let index = state.countdowns.firstIndex(where: { $0.id == id }) else { return }
+            state.countdowns[index].disabled = enabled ? nil : true
+            if enabled { state.countdowns[index].fireDate = Self.nextRing(of: state.countdowns[index], now: now) }
+        }
+    }
+
+    /// Changes an alarm's time, name or days (Settings). Nil days: rings once.
+    public func updateAlarm(_ id: UUID, hour: Int, minute: Int, label: String?, days: Set<Int>?, now: Date = Date()) {
+        mutate { state in
+            guard let index = state.countdowns.firstIndex(where: { $0.id == id }) else { return }
+            var alarm = state.countdowns[index]
+            let calendar = Calendar.current
+            alarm.fireDate = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: alarm.fireDate) ?? alarm.fireDate
+            alarm.label = label.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+            alarm.repeatDays = days.flatMap { $0.isEmpty ? nil : $0 }
+            alarm.fireDate = Self.nextRing(of: alarm, now: now)
+            state.countdowns[index] = alarm
+        }
+    }
+
+    /// A new alarm at the next `hour:minute` (Settings' Add Alarm).
+    @discardableResult
+    public func addAlarm(hour: Int, minute: Int, label: String?, days: Set<Int>?, now: Date = Date()) -> Countdown {
+        let today = Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: now) ?? now
+        var alarm = Countdown(id: UUID(), kind: .alarm, label: label.flatMap { $0.isEmpty ? nil : $0 }, fireDate: today, duration: 0,
+                              repeatDays: days.flatMap { $0.isEmpty ? nil : $0 })
+        alarm.fireDate = Self.nextRing(of: alarm, now: now)
+        mutate { $0.countdowns.append(alarm) }
+        return alarm
+    }
+
+    /// When an alarm next rings from `now`: its own time if still ahead, else
+    /// the next matching day (repeating) or the same time tomorrow (once).
+    static func nextRing(of alarm: Countdown, now: Date) -> Date {
+        if let days = alarm.repeatDays {
+            return AlarmRepeat.next(after: now, at: alarm.fireDate, on: days) ?? alarm.fireDate
+        }
+        guard alarm.fireDate <= now else { return alarm.fireDate }
+        let calendar = Calendar.current
+        let clock = calendar.dateComponents([.hour, .minute], from: alarm.fireDate)
+        let today = calendar.date(bySettingHour: clock.hour ?? 0, minute: clock.minute ?? 0, second: 0, of: now) ?? now
+        return today > now ? today : calendar.date(byAdding: .day, value: 1, to: today) ?? today
     }
 
     @discardableResult
@@ -277,7 +331,7 @@ public final class ClockStore: Sendable {
     func fireDue(now: Date = Date()) {
         var due: [Countdown] = []
         mutate { state in
-            due = state.countdowns.filter { !$0.isPaused && $0.fireDate <= now.addingTimeInterval(0.05) }
+            due = state.countdowns.filter { $0.isArmed && $0.fireDate <= now.addingTimeInterval(0.05) }
             state.countdowns.removeAll { item in due.contains { $0.id == item.id } }
             // A repeating alarm comes back for its next day.
             for alarm in due {
@@ -304,7 +358,7 @@ public final class ClockStore: Sendable {
         let (onChange, notifier) = hooks.withLock { ($0.onChange, $0.notifier) }
         save()
         reschedule()
-        notifier?.schedule(snapshot.countdowns.filter { !$0.isPaused }.map { countdown in
+        notifier?.schedule(snapshot.countdowns.filter(\.isArmed).map { countdown in
             let alert = ClockAlert(countdown)
             return ClockNotification(id: countdown.id.uuidString, title: alert.title, body: alert.message,
                                      date: countdown.fireDate.addingTimeInterval(Self.backupDelay))
@@ -347,7 +401,7 @@ public final class ClockStore: Sendable {
     }
 
     private var nextFireDate: Date? {
-        state.withLock { $0.countdowns.filter { !$0.isPaused }.map(\.fireDate).min() }
+        state.withLock { $0.countdowns.filter(\.isArmed).map(\.fireDate).min() }
     }
 }
 

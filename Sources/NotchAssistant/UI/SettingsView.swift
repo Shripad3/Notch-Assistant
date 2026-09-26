@@ -632,9 +632,25 @@ private struct ClockPane: View {
     @AppStorage(AlarmSounds.key(for: .alarm)) private var alarmSound = AlarmSounds.defaultSound(for: .alarm)
     @AppStorage(AlarmSounds.key(for: .timer)) private var timerSound = AlarmSounds.defaultSound(for: .timer)
     @AppStorage(StatusModel.notchCountdownKey) private var notchCountdown = true
+    @State private var editing: AlarmDraft?
 
     var body: some View {
         Form {
+            Section {
+                let alarms = status.clock.alarms.sorted { Self.timeOfDay($0.fireDate) < Self.timeOfDay($1.fireDate) }
+                if alarms.isEmpty {
+                    Text("No alarms. Add one here or say “Alfred, wake me up at 7 on weekdays”.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(alarms) { alarm in
+                    AlarmRow(alarm: alarm) { editing = AlarmDraft(alarm) }
+                }
+                Button("Add Alarm…") { editing = AlarmDraft() }
+            } header: {
+                Text("Alarms")
+            } footer: {
+                Text("Switched-off alarms are kept but never ring. Alarms ring while Notch Assistant is running; if it isn't, a notification appears instead.")
+            }
             Section {
                 soundPicker("Alarm sound", selection: $alarmSound, kind: .alarm)
                 soundPicker("Timer sound", selection: $timerSound, kind: .timer)
@@ -655,6 +671,14 @@ private struct ClockPane: View {
             .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
+        .sheet(item: $editing) { draft in
+            AlarmEditor(draft: draft) { editing = nil }
+        }
+    }
+
+    private static func timeOfDay(_ date: Date) -> Int {
+        let clock = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return (clock.hour ?? 0) * 60 + (clock.minute ?? 0)
     }
 
     private func soundPicker(_ title: String, selection: Binding<String>, kind: Countdown.Kind) -> some View {
@@ -665,5 +689,125 @@ private struct ClockPane: View {
             .onChange(of: selection.wrappedValue) { _, name in NSSound(named: name)?.play() }
             Button("Test") { status.onTestAlert?(kind) }
         }
+    }
+}
+
+/// One alarm in Settings: time, name and days, an on/off switch, edit and delete.
+private struct AlarmRow: View {
+    let alarm: Countdown
+    let edit: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(alarm.fireDate.formatted(date: .omitted, time: .shortened))
+                    .font(.system(size: 22, weight: .light))
+                    .monospacedDigit()
+                    .foregroundStyle(alarm.isEnabled ? .primary : .secondary)
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Edit", action: edit)
+            Button {
+                ClockStore.shared.remove([alarm.id])
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .help("Delete alarm")
+            Toggle("", isOn: Binding(get: { alarm.isEnabled }, set: { ClockStore.shared.setEnabled(alarm.id, $0) }))
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+    }
+
+    private var detail: String {
+        let when = alarm.repeatDays.map { AlarmRepeat.describe($0).prefix(1).uppercased() + AlarmRepeat.describe($0).dropFirst() }
+            ?? "Once, " + ClockFormat.when(alarm.fireDate, hasTime: false)
+        return [alarm.label, when].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+/// An alarm being added or edited.
+private struct AlarmDraft: Identifiable {
+    let id: UUID
+    let isNew: Bool
+    var time: Date
+    var label: String
+    var days: Set<Int>
+
+    init() {
+        id = UUID()
+        isNew = true
+        time = Calendar.current.date(bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date()
+        label = ""
+        days = []
+    }
+
+    init(_ alarm: Countdown) {
+        id = alarm.id
+        isNew = false
+        time = alarm.fireDate
+        label = alarm.label ?? ""
+        days = alarm.repeatDays ?? []
+    }
+}
+
+private struct AlarmEditor: View {
+    @State var draft: AlarmDraft
+    let done: () -> Void
+
+    /// Monday first; 1 = Sunday … 7 = Saturday.
+    private let order = [2, 3, 4, 5, 6, 7, 1]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                DatePicker("Time", selection: $draft.time, displayedComponents: .hourAndMinute)
+                TextField("Name", text: $draft.label, prompt: Text("Optional, e.g. Gym"))
+                LabeledContent("Repeat") {
+                    HStack(spacing: 4) {
+                        ForEach(order, id: \.self) { day in
+                            let on = draft.days.contains(day)
+                            Button(Calendar.current.veryShortWeekdaySymbols[day - 1]) {
+                                if on { draft.days.remove(day) } else { draft.days.insert(day) }
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(on ? .accentColor : nil)
+                            .fontWeight(on ? .bold : .regular)
+                            .help(Calendar.current.weekdaySymbols[day - 1])
+                        }
+                    }
+                }
+                Text(draft.days.isEmpty ? "Rings once, the next time it's this time." : "Rings " + AlarmRepeat.describe(draft.days) + ".")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .formStyle(.grouped)
+            Divider()
+            HStack {
+                if !draft.isNew {
+                    Button("Delete", role: .destructive) {
+                        ClockStore.shared.remove([draft.id])
+                        done()
+                    }
+                }
+                Spacer()
+                Button("Cancel", action: done).keyboardShortcut(.cancelAction)
+                Button(draft.isNew ? "Add" : "Save") { save() }.keyboardShortcut(.defaultAction)
+            }
+            .padding(12)
+        }
+        .frame(width: 420, height: 300)
+    }
+
+    private func save() {
+        let clock = Calendar.current.dateComponents([.hour, .minute], from: draft.time)
+        let label = draft.label.trimmingCharacters(in: .whitespaces)
+        if draft.isNew {
+            ClockStore.shared.addAlarm(hour: clock.hour ?? 7, minute: clock.minute ?? 0, label: label, days: draft.days)
+        } else {
+            ClockStore.shared.updateAlarm(draft.id, hour: clock.hour ?? 7, minute: clock.minute ?? 0, label: label, days: draft.days)
+        }
+        done()
     }
 }

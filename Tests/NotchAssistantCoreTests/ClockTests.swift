@@ -444,3 +444,49 @@ struct MultiStepClockTests {
         #expect(SpokenDuration.all(in: "one of 10 seconds one for 20 seconds and another for 30 seconds") == [10, 20, 30])
     }
 }
+
+struct AlarmSettingsTests {
+    @Test func switchedOffAlarmsDontRingButAreKept() {
+        let store = ClockStore(file: nil)
+        let rung = Mutex(0)
+        store.start(notifier: nil, onChange: { _ in }, onFire: { _ in rung.withLock { $0 += 1 } })
+        let alarm = store.addAlarm(at: Date().addingTimeInterval(-1), label: nil)
+        store.setEnabled(alarm.id, false)
+        store.fireDue()
+        #expect(rung.withLock { $0 } == 0)
+        #expect(store.snapshot.alarms.first?.isEnabled == false)
+    }
+
+    @Test func switchingBackOnMovesAPastAlarmForward() throws {
+        let store = ClockStore(file: nil)
+        let alarm = store.addAlarm(at: Date().addingTimeInterval(-3600), label: nil)
+        store.setEnabled(alarm.id, false)
+        store.setEnabled(alarm.id, true)
+        let fire = try #require(store.snapshot.alarms.first).fireDate
+        #expect(fire > Date())
+        #expect(fire < Date().addingTimeInterval(24 * 3600))
+    }
+
+    @Test func editingChangesTimeNameAndDays() throws {
+        let store = ClockStore(file: nil)
+        let alarm = store.addAlarm(hour: 7, minute: 0, label: nil, days: nil)
+        store.updateAlarm(alarm.id, hour: 6, minute: 45, label: "Gym", days: [2, 4])
+        let edited = try #require(store.snapshot.alarms.first)
+        let clock = Calendar.current.dateComponents([.hour, .minute, .weekday], from: edited.fireDate)
+        #expect(clock.hour == 6 && clock.minute == 45)
+        #expect([2, 4].contains(clock.weekday ?? 0))
+        #expect(edited.label == "Gym")
+        #expect(edited.repeatDays == [2, 4])
+        store.updateAlarm(alarm.id, hour: 6, minute: 45, label: "", days: [])
+        #expect(store.snapshot.alarms.first?.label == nil)
+        #expect(store.snapshot.alarms.first?.repeatDays == nil)
+    }
+
+    @Test func oldAlarmFilesStillLoad() throws {
+        let json = #"{"countdowns":[{"kind":"alarm","fireDate":812178000,"duration":0,"id":"41F8AEDC-3A1F-404B-98BB-7AAF43DC4B89"}],"stopwatch":{"accumulated":0,"laps":[]}}"#
+        let url = FileManager.default.temporaryDirectory.appending(path: "clock-\(UUID()).json")
+        try Data(json.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(ClockStore(file: url).snapshot.alarms.first?.isEnabled == true)
+    }
+}

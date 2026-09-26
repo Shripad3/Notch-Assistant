@@ -88,7 +88,7 @@ final class KokoroVoice: NeuralVoice {
     func speak(_ text: String) async -> Bool {
         guard isActive, let voice = chosenVoice, let manager = await load() else { return false }
         do {
-            let wav = try await manager.synthesize(text: text, voice: voice)
+            let wav = try await manager.synthesize(text: SpeechText.forNeuralVoice(text), voice: voice)
             try Task.checkCancellation()
             let player = try AVAudioPlayer(data: wav)
             player.delegate = delegate

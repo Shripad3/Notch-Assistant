@@ -64,8 +64,11 @@ private struct ClockMenu: View {
                 }
             }
             ForEach(clock.alarms.sorted { $0.fireDate < $1.fireDate }) { alarm in
-                Menu("Alarm \(ClockFormat.when(alarm.fireDate))\(alarm.label.map { ": \($0)" } ?? "")") {
-                    Button("Cancel Alarm") { store.remove([alarm.id]) }
+                let days = alarm.repeatDays.map { " " + AlarmRepeat.describe($0) } ?? ""
+                let when = alarm.repeatDays == nil ? ClockFormat.when(alarm.fireDate) : alarm.fireDate.formatted(date: .omitted, time: .shortened)
+                Menu("Alarm \(when)\(days)\(alarm.label.map { ": \($0)" } ?? "")\(alarm.isEnabled ? "" : " (off)")") {
+                    Button(alarm.isEnabled ? "Turn Off" : "Turn On") { store.setEnabled(alarm.id, !alarm.isEnabled) }
+                    Button("Delete Alarm") { store.remove([alarm.id]) }
                 }
             }
             if !clock.stopwatch.isIdle {

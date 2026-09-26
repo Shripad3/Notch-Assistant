@@ -284,7 +284,7 @@ struct AlarmTool: AssistantTool {
             let list = alarms.sorted { $0.fireDate < $1.fireDate }.map { alarm in
                 let when = alarm.repeatDays.map { "\(alarm.fireDate.formatted(date: .omitted, time: .shortened)) \(AlarmRepeat.describe($0))" }
                     ?? ClockFormat.when(alarm.fireDate, now: now)
-                return when + (alarm.label.map { " for \($0)" } ?? "")
+                return when + (alarm.label.map { " for \($0)" } ?? "") + (alarm.isEnabled ? "" : " (off)")
             }
             return ToolResult(list.count == 1 ? "You have an alarm \(Self.at(list[0]))" : "You have \(list.count) alarms: " + list.joined(separator: ", "), isAnswer: true)
         }
