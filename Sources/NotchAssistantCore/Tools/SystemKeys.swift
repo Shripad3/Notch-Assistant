@@ -103,6 +103,23 @@ enum Shortcuts {
         )
     }
 
+    /// Runs the user's shortcut whose name matches (exact first, then close
+    /// spelling), and returns its real name.
+    static func run(named spoken: String) async throws -> String {
+        let names = try await AppleScript.evaluate(
+            "tell application id \"com.apple.shortcuts.events\" to get name of every shortcut",
+            controlling: "Shortcuts"
+        )
+        guard let name = AppNameMatcher.match(spoken, candidates: names, aliases: [:]) else {
+            throw ToolError("I couldn't find a shortcut called “\(spoken)” in the Shortcuts app")
+        }
+        try await AppleScript.run(
+            "tell application id \"com.apple.shortcuts.events\" to run the shortcut named \(AppleScript.quoted(name))",
+            controlling: "Shortcuts"
+        )
+        return name
+    }
+
     /// A name that mentions Do Not Disturb (or DND) and the wanted state as a
     /// whole word. Pure, for testing.
     static func doNotDisturbShortcut(_ state: Switch, among names: [String]) -> String? {

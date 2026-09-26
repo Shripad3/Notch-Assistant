@@ -187,6 +187,10 @@ public actor AssistantCoordinator {
                 await apply(.textOnly(reply), session: id)
                 return
             }
+            if let routine = plan.routine {
+                try await run(routine, plan.steps, session: id)
+                return
+            }
             guard !plan.steps.isEmpty else {
                 throw AssistantFailure("I can't do that yet")
             }
@@ -214,6 +218,34 @@ public actor AssistantCoordinator {
             // cancel() already returned to Idle.
         } catch {
             await apply(.failure(AssistantFailure(error)), session: id)
+        }
+    }
+
+    /// A routine runs every step even when one fails (the lights being
+    /// unreachable shouldn't stop the music), then speaks its closing line,
+    /// or says what didn't work.
+    private func run(_ routine: RoutineRun, _ steps: [PlannedStep], session id: Int) async throws {
+        var failures = routine.skipped.map { "\($0) (turned off)" }
+        for (index, step) in steps.enumerated() {
+            try Task.checkCancellation()
+            await apply(.toolCall(step.tool.label, target: step.target()), session: id)
+            do {
+                _ = try await step.execute(isFinal: index == steps.count - 1)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                Log.coordinator.notice("routine step \(step.tool.name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                failures.append("\(step.tool.label.title) “\(step.target())”: \(AssistantFailure(error).message)")
+            }
+        }
+        let ran = steps.count + routine.skipped.count - failures.count
+        if failures.isEmpty {
+            await apply(.answer(routine.closing ?? "\(routine.name): done"), session: id)
+        } else if ran == 0 {
+            await apply(.failure(AssistantFailure("\(routine.name) didn't work. " + failures.joined(separator: " · "))), session: id)
+        } else {
+            let lead = routine.closing.map { $0 + " " } ?? ""
+            await apply(.answer(lead + "But \(failures.count) step\(failures.count == 1 ? "" : "s") didn't work: " + failures.joined(separator: " · ")), session: id)
         }
     }
 

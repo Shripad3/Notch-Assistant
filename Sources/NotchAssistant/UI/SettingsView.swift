@@ -5,7 +5,7 @@ import SwiftUI
 
 /// The panes, in sidebar order.
 private enum SettingsPane: String, CaseIterable, Identifiable {
-    case activation, model, capabilities, files, spotify, permissions, display
+    case activation, model, capabilities, routines, files, spotify, permissions, display
 
     var id: Self { self }
 
@@ -14,6 +14,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .activation: "Activation"
         case .model: "Model & Voice"
         case .capabilities: "Capabilities"
+        case .routines: "Routines"
         case .files: "Files"
         case .spotify: "Spotify"
         case .permissions: "Permissions"
@@ -26,6 +27,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .activation: "ear"
         case .model: "cpu"
         case .capabilities: "square.grid.2x2"
+        case .routines: "list.bullet.rectangle"
         case .files: "folder"
         case .spotify: "music.note"
         case .permissions: "lock.shield"
@@ -60,6 +62,7 @@ struct SettingsView: View {
         case .activation: ActivationPane(status: status)
         case .model: ModelPane()
         case .capabilities: CapabilitiesPane()
+        case .routines: RoutinesPane()
         case .files: FilesPane()
         case .spotify: SpotifyPane()
         case .permissions: PermissionsPane()

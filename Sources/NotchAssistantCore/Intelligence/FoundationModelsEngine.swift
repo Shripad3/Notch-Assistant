@@ -25,6 +25,11 @@ public struct FoundationModelsEngine: AssistantEngine {
     public func plan(for transcript: String, tools: [AnyAssistantTool]) async throws -> Plan {
         if let reason = unavailableReason() { throw reason }
         let transcript = Self.clean(transcript)
+        // Before small talk, so a "good night" routine wins over a reply.
+        if let routine = Routines.match(transcript) {
+            Log.intelligence.notice("routine \"\(routine.name, privacy: .public)\" for \"\(transcript, privacy: .public)\"")
+            return Routines.plan(for: routine, tools: tools)
+        }
         if let reply = SmallTalk.reply(to: transcript) ?? ContentRequests.refusal(for: transcript) {
             return Plan(steps: [], isDirect: true, reply: reply)
         }

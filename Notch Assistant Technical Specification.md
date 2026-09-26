@@ -1,6 +1,8 @@
 # Notch Assistant — Technical Specification
 
-Sep 24, 2026 · @Batman
+Sep 24, 2026 · @Batman · updated Sep 26, 2026 to match the build
+
+> **Status.** v0–v3 are built and in daily use, plus weather and routines, which were not in the original plan. v4 (gestures) has not started. Where the build departs from the original design, the section says so, and §1.4 lists every departure in one place. The assistant is called **Alfred**, after its wake word.
 
 ## Overview and goals
 
@@ -28,9 +30,25 @@ The requirement is **no cloud AI**, not *no network*. Inference is local: no API
 - **No general web agent.** In-page interaction is limited to a small set of scripted per-site recipes (§9).
 - **No cross-session memory.** Context lasts one activation. No history, no retrieval, no personalisation store.
 - **No text chat interface.** The notch is not a chat window.
-- **No distribution.** Personally signed, one machine. No notarisation, no paid developer account.
+- **No distribution (for now).** One machine, signed with the owner's Apple Developer account (needed for the WeatherKit entitlement, §9). Publishing later means a Developer ID build with notarisation; the Mac App Store is out, because the app cannot run sandboxed (§13).
 - **No screen understanding.** No screenshots, no vision models over the display. The camera is used for hand pose only.
 - **No arbitrary shell execution.** The model must never be given a `runCommand` tool. This is a hard security boundary, not a deferred feature.
+
+### Departures from the original design
+
+| Area | Original plan | As built | Why |
+| --- | --- | --- | --- |
+| Wake word | openWakeWord ONNX model | Apple's `SpeechAnalyzer` listening for "Alfred"; openWakeWord kept as a second engine | The community model scored the owner's voice at 0.001, and training a custom model failed repeatedly. The system recognizer hears "Alfred" reliably, with any prefix. |
+| Notch UI | DynamicNotchKit as a package | Vendored copy with patches (`Vendor/DynamicNotchKit/PATCHES.md`) | Hover behaviour kept the notch open and crashed on hover; fixed in the copy |
+| Intent parsing | Model for every command | Routines, then small talk, then `DirectMatcher` (fixed phrasings), then the model | The 3B model was not deterministic enough for simple commands (§8) |
+| Model context | Every enabled tool shown | `ToolRouter` shows at most 4 tools, picked by keyword | All tools overflowed the 4,096-token context |
+| Argument trust | Executor validation for files | Also *grounding*: a tool refuses an argument the user never said | The model invented URLs, apps, browsers and songs |
+| UI states | Six | Nine: adds Reply (spoken answer), List (pick one) and Confirm (yes/no) | Weather answers, same-named files, batch changes |
+| Spotify | AppleScript; Web API optional | Both: AppleScript for playback, Web API (user's own client ID, loopback OAuth) to resolve songs and playlists | Spoken names rarely match exactly |
+| systemControl | Native APIs only | Volume and mute through CoreAudio; brightness and lock by simulated keys (Accessibility); Do Not Disturb through the user's shortcut | macOS has no public API for brightness or Focus. Still no shell. |
+| File search | `NSMetadataQuery` | `MDQuery` on a background thread | `NSMetadataQuery` spun a nested run loop and stalled the main thread |
+| Signing | Free personal team | Apple Development certificate plus a provisioning profile | WeatherKit needs an entitlement from a profile |
+| New capabilities | — | `getWeather`, `runShortcut`, routines, file undo | Requested during use |
 
 ## Target environment
 
@@ -90,7 +108,7 @@ sequenceDiagram
 | --- | --- | --- |
 | Activation | `ActivationSource` | Emits `.triggered` events; owns nothing else |
 | Speech | `TranscriptionService` | Audio in, endpointed transcript out |
-| Intelligence | `AssistantEngine` | Transcript in, tool calls and final text out |
+| Intelligence | `AssistantEngine` | Transcript in, a `Plan` out: steps (tool + arguments), a reply, or a routine |
 | Action | `AssistantTool` | One capability, declared schema, async execute |
 | Presentation | `NotchPresenter` | Renders state; never decides state |
 
@@ -98,7 +116,9 @@ A single `AssistantCoordinator` actor owns the state machine and is the only thi
 
 ## Presentation layer
 
-Built on [DynamicNotchKit](https://github.com/MrKai77/DynamicNotchKit) (MIT, Swift Package Manager). It draws the custom window, manages content insets and safe areas, and takes SwiftUI views directly. It also supports Macs without a notch via a floating window style, which doubles as the clamshell fallback (§5).
+Built on [DynamicNotchKit](https://github.com/MrKai77/DynamicNotchKit) (MIT). It draws the custom window, manages content insets and safe areas, and takes SwiftUI views directly. It also supports Macs without a notch via a floating window style, which doubles as the clamshell fallback (§5).
+
+**As built:** a patched copy lives in `Vendor/DynamicNotchKit`, with every change listed in `PATCHES.md`. `NotchController` feeds show and hide requests through one serial queue so transitions never overlap, and the notch no longer stays open while hovered. Never use `MainActor.assumeIsolated` in callbacks from AppKit or Carbon; hop with `Task { @MainActor in … }`. The assumption crashed the app twice.
 
 ### App configuration
 
@@ -118,9 +138,18 @@ stateDiagram-v2
   Listening --> Thinking: endpoint
   Thinking --> Acting: tool call
   Thinking --> Result: text only
+  Thinking --> Reply: answer
   Acting --> Acting: next tool call
   Acting --> Result: done
-  Result --> Idle: after 3s
+  Acting --> Reply: answer
+  Acting --> List: several matches
+  Acting --> Confirm: batch change
+  List --> Acting: selected
+  Confirm --> Result: yes / no
+  Result --> Idle: after 3s (5s if undoable)
+  Reply --> Idle: after 4s
+  List --> Idle: after 10s
+  Confirm --> Idle: after 20s, nothing changed
   Thinking --> Error: failure
   Acting --> Error: failure
   Error --> Idle: after 5s
@@ -134,7 +163,10 @@ stateDiagram-v2
 | Listening | Live audio-reactive bars | Partial transcript |
 | Thinking | Indeterminate shimmer | Final transcript |
 | Acting | Tool icon | Tool name and target |
-| Result | Checkmark | One-line outcome |
+| Result | Checkmark | One-line outcome; "say undo" when undoable |
+| Reply | Speech glyph | A spoken answer (weather, small talk, a routine's closing line) |
+| List | Count | Up to ten files to click; a single match opens directly |
+| Confirm | Question glyph | The files a batch will change; answer by voice ("yes" / "no") or click |
 | Error | Amber glyph | Reason and, if a permission is missing, a button to the right settings pane |
 
 `Escape` cancels from any non-idle state and returns to Idle immediately, aborting in-flight tool calls.
@@ -180,7 +212,7 @@ Three sources, each independently toggleable, all conforming to `ActivationSourc
 | Source | Mechanism | Idle cost | Default | Build phase |
 | --- | --- | --- | --- | --- |
 | Hotkey | `CGEvent` tap or `RegisterEventHotKey`, hold-to-talk | None | On | v0 |
-| Wake word | openWakeWord (Apache-2.0) via ONNX Runtime | \~1–3% of one core | Off | v2 |
+| Wake word | `SpeechAnalyzer` listening for "Alfred" (openWakeWord as an alternative engine) | Low; Neural Engine | Off | v2 |
 | Gesture | Vision `VNDetectHumanHandPoseRequest` | High — see below | Off | v4 |
 
 ### Hotkey
@@ -192,6 +224,13 @@ Hold-to-talk, not toggle: press and hold starts capture, release ends it. This r
 openWakeWord is Apache-2.0 and free, with pretrained models good enough for personal use. Custom wake-word quality depends on the training data you supply, and coverage is English-first. Picovoice Porcupine is more accurate out of the box but is proprietary and metered; its free tier is adequate for one machine, and it should sit behind the same `ActivationSource` protocol so it can be swapped in without touching anything else.
 
 Run detection on a dedicated low-priority queue at 16 kHz mono. On detection, emit the trigger and hand the *already-buffered* preceding 500 ms to the speech layer so the first word of the command is not clipped.
+
+**As built.** openWakeWord's community model did not recognise the owner's voice, and training a custom "hey Alfred" model failed in Colab. The default engine is now Apple's on-device `SpeechAnalyzer`/`SpeechTranscriber`, primed with "Alfred" as a contextual string and read from its fast, volatile results. It accepts any prefix ("hey", "okay", "good morning") and a command in the same breath ("Alfred, open Notes"). Details:
+
+- 2.5 s of pre-roll goes to the command recognizer, since the command often ends before detection fires.
+- Detections are de-duplicated by audio time, because the volatile and final results both report the same word.
+- A detection from this engine is already confirmed, so the second-stage check is skipped; common mishearings of the wake word are stripped from the command.
+- The openWakeWord path (`WakeWordDetector`, ONNX Runtime) remains selectable in Settings.
 
 ### Gestures
 
@@ -220,17 +259,19 @@ Hold-to-talk needs none — release ends the utterance. Wake word and gesture do
 
 - 800 ms of sub-threshold audio ends the utterance.
 - 10 s hard cap regardless.
-- 2 s of silence with no speech at all cancels back to Idle without invoking the model.
+- 2 s of silence with no speech at all ends listening. The command may still be in the pre-roll, so it is transcribed. An empty transcript, or one that is only the wake word, returns to Idle without invoking the model.
 
 The silence threshold must adapt to the room's noise floor, sampled during the first 200 ms, or it will never fire with a fan or music playing.
 
 ### Text to speech
 
-`AVSpeechSynthesizer` with a system voice. Free and built in. Speak only when the result is not self-evident — launching an app needs no narration, a failure or a spoken answer does. A "speak responses" setting with options Always / Errors only / Never, defaulting to Errors only.
+`AVSpeechSynthesizer` with a system voice. Free and built in. Speak only when the result is not self-evident — launching an app needs no narration, a failure or a spoken answer does. A "speak responses" setting with options Always / Errors only / Never, defaulting to Errors only. Answers (weather, routines' closing lines) are always spoken unless set to Never.
+
+**As built:** Settings lists installed voices, best quality first. Premium voices (downloaded in System Settings → Accessibility → Spoken Content) sound far less robotic than the enhanced ones. A neural voice such as Kokoro is a possible later addition behind the same `Speaker`.
 
 ### Audio session
 
-- Duck other audio during capture rather than pausing it, so Spotify does not stop every time the wake word fires.
+- Duck other audio during capture rather than pausing it, so Spotify does not stop every time the wake word fires. **As built:** `AudioDucker` lowers the Mac's output volume while listening and restores it afterwards (the original level is saved first, so a crash can't leave it low) (a setting, on by default); without it the recognizer could not hear over music.
 - Release the input device immediately after endpointing. Holding the microphone open keeps the orange indicator lit and looks like a bug.
 - Handle device changes: switching to AirPods mid-session must not wedge the pipeline.
 
@@ -254,6 +295,18 @@ The single biggest determinant of quality. A 3B model is a competent intent pars
 - **Short instructions.** A long system prompt crowds the small context window. Keep it under roughly 200 tokens and push specifics into tool descriptions.
 - **One activation, one session.** Create a fresh `LanguageModelSession` per command. No history carried across activations (§1 non-goals).
 
+### The planning pipeline, as built
+
+Most commands never reach the model. Each stage returns a plan or passes the command on:
+
+1. **Clean.** Strip punctuation and filler ("Open YouTube." → "open youtube").
+2. **Routines** (§9). A user-defined phrase runs its steps as written.
+3. **Small talk and refusals.** "Thanks", "who are you", and requests for file contents get fixed replies.
+4. **`DirectMatcher`.** Each tool can claim fixed phrasings ("open X", "play X on Spotify", "how's the weather in Paris", "turn on DND"). A command with "and" or "then" is left to the model, since it has several steps.
+5. **`ToolRouter`, then the model.** The model sees at most 4 tools, chosen by keyword, in a structured-output schema whose steps are each one of those tools (`DynamicGenerationSchema`). With every tool the prompt reached 5,070 tokens and overflowed the 4,096-token context. The worst case with the router is about 2,560 tokens.
+
+**Grounding.** The model's output is untrusted (see §9, validation). On top of the executor's checks, each tool refuses arguments the user did not say: a URL, app, browser, song, place or file name must appear in the transcript. `CommandContext` carries the transcript to the tool as a task-local value. Routine steps have no transcript, and so skip this check, because the user wrote them.
+
 ### Fallback backend: MLX
 
 Confirmed against Apple's own sessions. At WWDC 2026 Apple opened the framework's model abstraction layer so nearly any language model can back a `LanguageModelSession`, through a new `LanguageModel` protocol. `SystemLanguageModel` and `PrivateCloudComputeLanguageModel` already conform, and Apple open-sourced two further implementations — `CoreAILanguageModel` and `MLXLanguageModel` — for running local models on the Neural Engine and the Mac's GPU ([session 241](https://developer.apple.com/videos/play/wwdc2026/241/)). Usage is a one-line swap: `MLXLanguageModel(modelID: "mlx-community/my-model")` in place of `SystemLanguageModel()`, session code unchanged ([session 339](https://developer.apple.com/videos/play/wwdc2026/339/)).
@@ -275,7 +328,7 @@ Practical sizing on 16 GB: a 7B model at 4-bit quantisation occupies roughly 5.5
 | --- | --- |
 | Model unavailable | Error state, link to Apple Intelligence settings |
 | No tool matched | Speak or show "I can't do that yet" — never guess a tool |
-| Tool threw | Surface the tool's own message, keep remaining steps unexecuted |
+| Tool threw | Surface the tool's own message, keep remaining steps unexecuted (routines instead run every step and report the failures at the end) |
 | Context overflow | Truncate transcript, retry once, then fail visibly |
 | Inference exceeded 10 s | Cancel, show timeout |
 
@@ -293,7 +346,10 @@ Every tool conforms to `AssistantTool`: a name, a description the model reads, a
 | `controlSpotify` | `action`, `query?` | Yes | Automation | n/a | v2 |
 | `systemControl` | `action`, `value?` | No | Varies | n/a | v2 |
 | `organiseFiles` | `operation`, `tokens`, `destination?` | No | Files | **Required** | v3 |
-| `playYouTube` | `query` | Yes | Accessibility | n/a | v3 |
+| `playYouTube` | `query`, `latest?`, `browser?` | Yes | Accessibility (Tier 2) | n/a | v3 |
+| `undoFileChange` | — | No | Files | It *is* the inverse | v3 |
+| `getWeather` | `place?`, `day` | Yes | None | n/a | after v3 |
+| `runShortcut` | `name` | No | Automation | n/a | after v3 |
 
 This table will grow. Two columns are load-bearing for any tool added later: `Reversible`, which drives the undo journal (§9.6), and `Permission`, which generates the settings toggle and the permissions check automatically (§9.8).
 
@@ -317,11 +373,56 @@ Construct a search URL and open it. Deliberately not an API call: no key, no cos
 
 Drive the **desktop app via AppleScript**, not the Web API. AppleScript needs no OAuth flow, no registered application and no network round-trip, and transport control is instant. The user has Spotify Premium, so the Web API is also available and is optionally worth adding for one thing AppleScript does poorly: resolving a vague spoken request ("play that Mat Armstrong podcast") to a specific track or episode URI. Recommended split — AppleScript for transport and playback, Web API search purely as a resolver when a query is ambiguous, behind its own setting. The desktop app must be running for AppleScript; fall back to launching it.
 
-Actions: `play`, `pause`, `next`, `previous`, `playTrack(query)`, `setVolume`. Requires the Automation permission for Spotify, requested on first use with a legible explanation.
+Actions: `play`, `pause`, `next`, `previous`, `playSong(query)`, `playPlaylist(query)`, `setVolume`. Requires the Automation permission for Spotify, requested on first use with a legible explanation.
+
+**As built.** The Web API resolver is in, with the user's own Spotify client ID and a loopback redirect (`http://127.0.0.1:<port>`, which Spotify accepts as secure). After a cold launch the tool waits for Spotify to be ready, then checks that it is actually playing. "Play some music on Spotify" means "play", not a song called "Some Music".
 
 ### systemControl
 
 Volume, brightness, Do Not Disturb, sleep, lock. Implemented with native APIs where available. **No shell escape hatch** — if a capability requires shelling out, it does not ship.
+
+**As built.** There is no public API for brightness or Focus, so the tool uses:
+
+- **Volume and mute:** CoreAudio, on the default output device. Sleep goes through System Events.
+- **Brightness:** the brightness keys, simulated (`NX_KEYTYPE_BRIGHTNESS_UP/DOWN`). A setting to a percentage steps the keys.
+- **Lock:** ⌃⌘Q, simulated.
+- **Do Not Disturb:** runs the user's own shortcut, found by name ("Turn On DND", "Do Not Disturb Off" and so on), through Shortcuts Events.
+
+Key simulation needs Accessibility.
+
+### getWeather
+
+Answers aloud: the temperature and conditions now, the day's high and low, and the chance of rain when it is at least 20%. It uses Apple WeatherKit when the app is signed with the entitlement, with MapKit's geocoder, so no third party sees the place. Otherwise, or if WeatherKit fails, it uses Open-Meteo (free, no key). The home city is a setting, defaulting to the Mac's time zone. Only a place name leaves the machine; no AI runs in the cloud. WeatherKit requires Apple's attribution, which is shown in the Capabilities pane.
+
+### runShortcut
+
+Runs one of the user's shortcuts by name ("run my Lights On shortcut"), silently, through Shortcuts Events. This is how lights and other HomeKit scenes are reached: a native app cannot use HomeKit on the Mac without a Catalyst build, and the Shortcuts app already can. The name must be one the user said. The model cannot pick a shortcut on its own.
+
+### Routines
+
+A routine is a phrase that runs several steps: "Alfred, I'm home" turns on the lights, plays a playlist and opens VS Code. Routines are the user's own automation, written in Settings rather than spoken, so they differ from spoken commands in three ways:
+
+- **No model.** The phrase is matched directly, before anything else. It matches when the command is the phrase, allowing two extra words ("hey, I'm home now"), and not when the phrase merely appears inside a longer sentence.
+- **No grounding.** The steps are the user's own words, so the "was this said?" check does not apply. The executor's checks and each tool's own safety still do.
+- **Every step runs.** If the lights are unreachable, the music still starts. Failures are listed at the end, and the closing line ("Welcome home") is spoken.
+
+Each routine has:
+
+- a name;
+- one or more trigger phrases;
+- an ordered list of steps;
+- an optional closing line.
+
+| Step | Runs as |
+| --- | --- |
+| Open app, open website | `openApp`, `openURL` |
+| Play music, play playlist, play song, pause music | `controlSpotify` |
+| Run shortcut (lights, scenes) | `runShortcut` |
+| Set volume, set brightness, mute, unmute, Do Not Disturb on/off, lock screen | `systemControl` |
+
+**File changes are deliberately not a step type.** A routine runs without a transcript or a search, so it has no tokens to act on (§9). A step whose tool is turned off in Capabilities is skipped and reported.
+
+Routines are stored as JSON in user defaults. Settings offers examples ("I'm home", "Good night", "Focus") to start from, and refuses a phrase that another routine already uses.
 
 ### playYouTube — the brittle one
 
@@ -338,6 +439,13 @@ This is the hardest tool in the spec and the most likely to break. Implement in 
 
 Write Tier 2 as a per-site recipe with a version-stamped selector strategy and an automatic fall back to Tier 1 on any failure. Never let a failed auto-click leave the user with nothing.
 
+**As built (`YouTubeAutoplay`).**
+
+- **Its own tab.** In a scriptable browser (Arc, Chrome, Safari), the tool opens the results in a new tab it creates, reads that tab's id, and only ever navigates that tab. It never touches the tab the user was on. Arc's `make new tab` returns an unusable reference, so the id is read from the newly active tab.
+- **Picking the video.** Accessibility finds the first real video link (not an ad, a Short or a channel), and the tab is navigated to it only if it is still the active one.
+- **"Latest".** "Mat Armstrong's latest video" goes to the creator's channel from the results, then to the newest upload on its Videos page. Sorting the search by upload date instead picked up other people's videos.
+- **Fallback.** Any failure leaves the results page (Tier 1). Tier 2 is a setting, on by default.
+
 ### File handling — the boundaries
 
 Two absolute limits define this whole area. They are not settings, not defaults, and not toggles. They are architectural:
@@ -351,7 +459,7 @@ The design below exists to make these enforceable by structure rather than by in
 
 This rule is more load-bearing than it first appears, and it simplifies the threat model enormously — the agent cannot leak a document because it never held one.
 
-- **Search is metadata-only.** `NSMetadataQuery` is used with name, kind, and date predicates. Content-scope search (`kMDItemTextContent`) is explicitly **not** used, because it would return matched text from inside documents. Set the query's value list to metadata attributes only and never request content.
+- **Search is metadata-only.** A Spotlight query (as built, `MDQuery` on a background thread; `NSMetadataQuery` stalled the main thread) is used with name, kind, and date predicates. Content-scope search (`kMDItemTextContent`) is explicitly **not** used, because it would return matched text from inside documents. Set the query's value list to metadata attributes only and never request content.
 - **Results carry no previews, no thumbnails, no snippets.** The model receives names and dates, nothing more.
 - **"Open my invoice"** resolves by filename, kind and recency. It cannot resolve by "the file that mentions Acme", and the notch should say so plainly rather than guessing, because the alternative is the agent silently doing something less private than the user expects.
 - **Opening is a handoff.** `NSWorkspace.open` passes the file to Preview, Pages or whatever owns it. The agent's involvement ends at that call.
@@ -395,7 +503,7 @@ Operations with no clean inverse are **refused, not confirmed**: overwriting an 
 Treat model output as untrusted input, exactly as you would a web form. Never rely on a prompt instruction like "don't touch system files". The executor independently checks, after resolving every token and canonicalising every path:
 
 - Inside a user-configured scoped root (Documents, Downloads, Desktop by default).
-- Not on the deny list: `~/Library`, `/System`, `/private`, anything inside a `.app` bundle, `.git` directories, dotfiles.
+- Not on the deny list: `~/Library`, `/System`, `/private`, anything inside a `.app` bundle, `.git` directories, dotfiles. As built, the list also covers build and dependency folders, so project files are not mistaken for the user's own: `node_modules`, `__pycache__`, `DerivedData`, `site-packages`, `venv`, `Pods`, `Carthage`, `build`, `target`.
 - Not a symlink pointing outside a scoped root.
 - Destination does not already exist.
 - Batch size at or under 20 items.
@@ -416,6 +524,8 @@ Any check failing means the operation is refused with a legible reason. No overr
 
 The common case has no dialog at all. Confirmation appears only where the blast radius genuinely exceeds one file.
 
+**As built:** a spoken extension must match exactly ("test txt" means `test.txt`, not `test.md`). When several files share the requested name, a rename shows them as a list to pick from rather than guessing. "Undo that" (`undoFileChange`) reverses the latest journal entry, even after a relaunch.
+
 **Accepted trade-off:** because the model can only act on tokens from a search in the same activation, "rename everything in Downloads" is not expressible in one step — it must search, then act on results. This is a real limitation and a deliberate one.
 
 ### Adding a tool later
@@ -424,14 +534,14 @@ The catalog above is a starting set. A new capability requires exactly four thin
 
 1. A type conforming to `AssistantTool` with a `@Generable` argument struct.
 2. A description string written for the model, not for a human — concrete, with an example phrasing.
-3. An entry in `ToolRegistry` with its `requiresNetwork`, `reversibility` and required-permission metadata. `reversibility` is one of `notApplicable` (the tool changes nothing the user owns), `reversible` (the tool supplies an inverse for the journal), or `refused` (no inverse exists, so the operation is not offered). There is no separate destructive flag — a mutating tool that cannot supply an inverse does not ship.
+3. An entry in `ToolRegistry` with its keywords (for `ToolRouter`), any fixed phrasings (`directArguments`, for `DirectMatcher`), and its `requiresNetwork`, `reversibility` and required-permission metadata. `reversibility` is one of `notApplicable` (the tool changes nothing the user owns), `reversible` (the tool supplies an inverse for the journal), or `refused` (no inverse exists, so the operation is not offered). There is no separate destructive flag — a mutating tool that cannot supply an inverse does not ship.
 4. A toggle in the Capabilities pane, generated automatically from that metadata rather than hand-written.
 
 If step 4 requires editing the settings UI by hand, the registry is not data-driven enough — fix that rather than adding the toggle.
 
 ## Settings and permissions
 
-A SwiftUI `Settings` scene reached from the `MenuBarExtra`, with `@AppStorage` backing every toggle. Seven panes.
+A settings window reached from the `MenuBarExtra`, with `@AppStorage` backing every toggle. As built, the SwiftUI `Settings` scene would not open reliably from a menu-bar app, so `SettingsWindowController` hosts the view in its own window, with a sidebar of panes.
 
 ### The gating principle
 
@@ -444,15 +554,18 @@ The tool registry therefore reads settings at session construction, every time.
 
 ### Panes
 
-| Pane | Contents |
+| Pane | Contents (as built) |
 | --- | --- |
-| Activation | Hotkey binding; wake word on/off, phrase, sensitivity; gestures on/off, which gestures, confirmation frames |
-| Model | Backend (Foundation Models / MLX); model picker when MLX; response length; speak responses (Always / Errors only / Never) |
-| Capabilities | One toggle per tool, generated from registry metadata; destructive tools flagged and grouped separately |
-| Display | Fallback when no notched screen (Hide / Floating / Disable); show idle dot |
-| Power | Auto-switch profiles on/off; what the battery profile disables |
+| Activation | Hotkey (⌥Space, hold to talk); wake word on/off, engine (speech / model), accent, sensitivity; auto-switch power profiles |
+| Model & Voice | Apple Intelligence status; voice picker with preview; speak responses (Always / Errors only / Never); duck audio while listening |
+| Capabilities | One toggle per tool, generated from registry metadata; search engine; YouTube autoplay; weather city and attribution |
+| Routines | The user's routines: phrases, steps, closing line; on/off per routine; examples to start from |
+| Files | Scoped roots; undo history; the fixed statement of what the agent cannot do |
+| Spotify | Web API client ID and sign-in |
 | Permissions | Live status per grant, with deep links |
-| Files | Scoped roots the file tools may touch; batch-confirmation threshold; journalled undo history; a fixed statement of the three things the agent cannot do |
+| Display | Fallback when no notched screen (Hide / Floating / Disable) |
+
+Gesture settings arrive with v4.
 
 ### Permissions pane
 
@@ -462,8 +575,8 @@ Five separate grants, each of which will at some point be missing or revoked. Sh
 | --- | --- | --- |
 | Microphone | All voice input | `...?Privacy_Microphone` |
 | Camera | Gestures only | `...?Privacy_Camera` |
-| Accessibility | In-page navigation, global hotkey tap | `...?Privacy_Accessibility` |
-| Automation | Spotify control | `...?Privacy_Automation` |
+| Accessibility | In-page navigation, simulated brightness and lock keys | `...?Privacy_Accessibility` |
+| Automation | Spotify, volume, browser tabs, Shortcuts (DND, routines) | `...?Privacy_Automation` |
 | Files and Folders | File search, open, rename, move (metadata only; never contents) | ...?Privacy\_FilesAndFolders |
 
 Prefix: `x-apple.systempreferences:com.apple.preference.security`.
@@ -511,31 +624,39 @@ The M4 Air has no fan, so sustained inference degrades throughput rather than dr
 
 ### Structure
 
+As built, a Swift package rather than an Xcode project:
+
 ```
-NotchAssistant/
-  App/              NotchAssistantApp.swift, AppDelegate, MenuBarExtra
-  Coordinator/      AssistantCoordinator (actor), StateMachine
-  Activation/       ActivationSource, Hotkey, WakeWord, Gesture
-  Speech/           TranscriptionService, SystemSTT, WhisperSTT, Endpointer, Speaker
-  Intelligence/     AssistantEngine, FoundationModelsEngine, MLXEngine, Prompt
-  Tools/            AssistantTool, ToolRegistry, one file per tool
-  Display/          DisplayResolver, NotchWindowController
-  UI/               NotchView, state views, SettingsScene + panes
-  Permissions/      PermissionChecker, deep links
-  Power/            PowerProfileMonitor
-  Support/          Logging, AppStorage keys
+Package.swift
+Sources/
+  NotchAssistant/            the app: AppDelegate (composition root), MenuBarExtra,
+                             UI/ (NotchController, NotchViews, SettingsView, RoutinesPane)
+  NotchAssistantCore/        everything testable
+    Coordinator/             AssistantCoordinator (actor), StateMachine
+    Activation/              Hotkey, ActivationSource, WakeWord/ (SpeechWakeListener, WakeWordDetector)
+    Speech/                  SystemSTT, Endpointer, AudioDucker, Speaker
+    Intelligence/            FoundationModelsEngine, Plan, DirectMatcher, ToolRouter, SmallTalk, Prompt
+    Tools/                   AssistantTool, ToolRegistry, Grounding, one file per tool,
+                             Spotify/, Files/ (FileAccess, FileTokens, FileJournal, FileOrganizer)
+    Routines/                Routine, Routines (matching, planning, examples)
+    Display/  Permissions/  Power/  Support/
+  PlanCLI/                   type a command, see the plan (no microphone needed)
+Vendor/DynamicNotchKit/      patched copy, see PATCHES.md
+Resources/                   Info.plist, wake-word models, provisioning profile (not in git)
+scripts/build-app.sh         builds, bundles and signs NotchAssistant.app
+Tests/                       NotchAssistantCoreTests, audio fixtures
 ```
 
 ### Dependencies
 
 | Package | Licence | Purpose | Phase |
 | --- | --- | --- | --- |
-| [DynamicNotchKit](https://github.com/MrKai77/DynamicNotchKit) | MIT | Notch window and UI | v1 |
+| [DynamicNotchKit](https://github.com/MrKai77/DynamicNotchKit) | MIT | Notch window and UI (vendored, patched) | v1 |
 | [openWakeWord](https://github.com/dscripka/openWakeWord) | Apache-2.0 | Wake word models | v2 |
-| onnxruntime-swift | MIT | Runs the wake-word model | v2 |
-| mlx-swift + mlx-swift-examples | MIT | Optional local model backend | Optional |
+| onnxruntime-swift-package-manager 1.19.2 | MIT | Runs the openWakeWord engine | v2 |
+| mlx-swift + mlx-swift-examples | MIT | Optional local model backend | Not used yet |
 
-Everything else is a system framework: `FoundationModels`, `Speech`, `AVFoundation`, `Vision`, `AppKit`, `SwiftUI`, `IOKit`.
+Everything else is a system framework: `FoundationModels`, `Speech`, `AVFoundation`, `AppKit`, `SwiftUI`, `IOKit`, `WeatherKit`, `MapKit`, `CoreServices` (Spotlight); `Vision` arrives with v4.
 
 ### Info.plist keys
 
@@ -547,7 +668,7 @@ Everything else is a system framework: `FoundationModels`, `Speech`, `AVFoundati
 
 **Sandbox off.** Accessibility-tree traversal and AppleScript control of other apps are incompatible with the App Sandbox. This is acceptable because the app is not being distributed (§1 non-goals) but it is a deliberate decision, not an oversight.
 
-Sign locally with a free personal Apple ID. A paid Developer Program membership is only needed to distribute, and is out of scope. No notarisation, no hardened runtime.
+**As built:** signed with the owner's Apple Development certificate and an embedded macOS provisioning profile (`Resources/NotchAssistant.provisionprofile`, not in git) that grants WeatherKit. `scripts/build-app.sh` writes the entitlements (application identifier, team identifier, WeatherKit) and signs. It builds into `~/Applications`, because the project folder is synced by iCloud and iCloud's extended attributes break `codesign`. No notarisation, no hardened runtime yet; both are needed only to publish (Developer ID).
 
 ### Concurrency
 
@@ -581,6 +702,19 @@ Wake word, endpointing, power profiles, file search and open, `controlSpotify`, 
 
 **Done when:** renaming a single file by voice completes immediately with no dialog and reverses on "undo that"; a batch of five shows one confirmation listing the files; and the canonical YouTube command reaches search results every time, the video itself most of the time, and a dead end never.
 
+**Status: done**, with brightness, lock and Do Not Disturb added to `systemControl`. v0–v2 are also done.
+
+### After v3 — built on request
+
+- **Weather** (`getWeather`): WeatherKit with an Open-Meteo fallback.
+- **Routines** and **`runShortcut`**: multi-step phrases, lights through Shortcuts.
+
+Candidates next:
+
+- **Timers and alarms.** AlarmKit is not available on macOS, so this would be an in-app timer: a countdown in the notch, a sound and a spoken line when it ends, and a local notification (`UserNotifications`) as a backup. Reminders would go to the Reminders app through EventKit.
+- **A neural voice** (Kokoro).
+- **Release hygiene:** remove the debug-only main-thread watchdog, make a release build, add launch at login.
+
 ### v4 — Gestures
 
 Vision hand pose, two gestures, all the mitigations in §6.
@@ -608,7 +742,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding and routine matching that need no model. About 216 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist
@@ -653,7 +787,7 @@ The project is done when the canonical command works end to end from a cold idle
 
 These are genuine forks. Flag them rather than guessing:
 
-1. **Wake-word engine.** openWakeWord is free and Apache-2.0 but needs training data for a custom phrase; Porcupine is more accurate out of the box, proprietary, and free only at small scale. Start with openWakeWord behind the protocol and switch if false positives prove intolerable.
+1. **Wake-word engine.** *Decided:* Apple's `SpeechAnalyzer`, listening for "Alfred" (§6). openWakeWord remains as an alternative engine; Porcupine was not needed.
 2. **STT engine.** System `Speech` is free and lightest; Whisper is more accurate on accented speech. Build both, default to system, let real use decide.
 3. **Collapsed idle appearance.** Fully hidden or a thin persistent dot. Affects whether the app feels present or intrusive. Make it a setting; pick a default after living with it.
 4. **Gesture vocabulary.** Two gestures is the recommendation. More increases false positives faster than it increases usefulness.
@@ -672,7 +806,9 @@ These are the invariants. If a future change violates one, the change is wrong, 
 - Path validation lives in the executor after canonicalisation, never in the prompt (§9).
 - Capability toggles gate tool *registration*, not UI visibility (§10).
 - `NSScreen.main` is never used to place the window (§5).
-- Tier 2 in-page navigation always falls back to Tier 1 (§9).
+- Tier 2 in-page navigation always falls back to Tier 1 (§9), and never changes a tab it did not open.
+- A spoken command's arguments must have been said; the model cannot introduce a URL, app, song, place or file on its own (§8).
+- Routines cannot change files (§9).
 
 ## Sources
 

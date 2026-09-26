@@ -22,6 +22,7 @@ public struct ToolRegistry: Sendable {
         AnyAssistantTool(WebSearchTool()),
         AnyAssistantTool(ControlSpotifyTool()),
         AnyAssistantTool(SystemControlTool()),
+        AnyAssistantTool(RunShortcutTool()),
         // After openApp and openURL: "open spotify" must stay an app.
         AnyAssistantTool(OpenFileTool()),
         AnyAssistantTool(FindFilesTool()),

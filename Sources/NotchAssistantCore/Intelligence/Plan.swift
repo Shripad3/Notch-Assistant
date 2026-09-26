@@ -3,8 +3,10 @@ import FoundationModels
 public struct PlannedStep: Sendable {
     public let tool: AnyAssistantTool
     public let arguments: GeneratedContent
-    /// What the user said, so the tool can ground its arguments in it.
-    public let transcript: String
+    /// What the user said, so the tool can ground its arguments in it. Nil
+    /// for a routine's steps, which the user wrote themselves: grounding
+    /// ("was this said?") doesn't apply.
+    public let transcript: String?
 
     public func target() -> String {
         (try? tool.target(of: arguments)) ?? ""
@@ -27,6 +29,16 @@ public struct Plan: Sendable {
     public var isDirect = false
     /// A text-only answer, with no steps (`SmallTalk`).
     public var reply: String?
+    /// A routine: every step runs even if one fails, and the routine's
+    /// closing line (or a summary) is spoken at the end.
+    public var routine: RoutineRun?
+}
+
+public struct RoutineRun: Sendable, Equatable {
+    public let name: String
+    public let closing: String?
+    /// Steps that couldn't be planned (a tool turned off), reported at the end.
+    public let skipped: [String]
 }
 
 /// Builds the structured-output schema from whichever tools are registered,
