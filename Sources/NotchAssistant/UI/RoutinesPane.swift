@@ -122,6 +122,13 @@ private struct RoutineEditor: View {
         return clash
     }
 
+    private func move(_ id: RoutineStep.ID, by offset: Int) {
+        guard let index = routine.steps.firstIndex(where: { $0.id == id }) else { return }
+        let target = index + offset
+        guard routine.steps.indices.contains(target) else { return }
+        withAnimation { routine.steps.swapAt(index, target) }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Form {
@@ -140,11 +147,16 @@ private struct RoutineEditor: View {
                 }
                 Section {
                     ForEach($routine.steps) { $step in
-                        StepRow(step: $step) {
-                            routine.steps.removeAll { $0.id == step.id }
-                        }
+                        let index = routine.steps.firstIndex { $0.id == step.id } ?? 0
+                        StepRow(
+                            number: index + 1,
+                            step: $step,
+                            canMoveUp: index > 0,
+                            canMoveDown: index < routine.steps.count - 1,
+                            onMove: { offset in move(step.id, by: offset) },
+                            onRemove: { routine.steps.removeAll { $0.id == step.id } }
+                        )
                     }
-                    .onMove { routine.steps.move(fromOffsets: $0, toOffset: $1) }
                     Menu("Add Step") {
                         ForEach(RoutineStep.Kind.allCases, id: \.self) { kind in
                             Button(kind.title) { routine.steps.append(RoutineStep(kind)) }
@@ -154,7 +166,7 @@ private struct RoutineEditor: View {
                 } header: {
                     Text("Steps")
                 } footer: {
-                    Text("Drag to reorder. “Run shortcut” runs a shortcut from the Shortcuts app by name, e.g. one that turns on your lights.")
+                    Text("Steps run top to bottom; use the arrows to reorder. “Run shortcut” runs a shortcut from the Shortcuts app by name, e.g. one that turns on your lights.")
                 }
             }
             .formStyle(.grouped)
@@ -184,11 +196,19 @@ private struct RoutineEditor: View {
 }
 
 private struct StepRow: View {
+    let number: Int
     @Binding var step: RoutineStep
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let onMove: (Int) -> Void
     let onRemove: () -> Void
 
     var body: some View {
         HStack {
+            Text("\(number).")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 20, alignment: .trailing)
             Picker("", selection: $step.kind) {
                 ForEach(RoutineStep.Kind.allCases, id: \.self) { Text($0.title).tag($0) }
             }
@@ -203,8 +223,17 @@ private struct StepRow: View {
             } else {
                 Spacer()
             }
+            Button { onMove(-1) } label: { Image(systemName: "chevron.up") }
+                .buttonStyle(.borderless)
+                .disabled(!canMoveUp)
+                .help("Move up")
+            Button { onMove(1) } label: { Image(systemName: "chevron.down") }
+                .buttonStyle(.borderless)
+                .disabled(!canMoveDown)
+                .help("Move down")
             Button(action: onRemove) { Image(systemName: "minus.circle") }
                 .buttonStyle(.borderless)
+                .help("Remove step")
         }
     }
 }
