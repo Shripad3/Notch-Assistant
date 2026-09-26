@@ -388,3 +388,59 @@ struct RepeatingAlarmTests {
         #expect(DirectMatcher.isCompound("set an alarm for 7 and open spotify"))
     }
 }
+
+/// Several clock steps planned by the model from one sentence.
+struct MultiStepClockTests {
+    @Test func weekdaysAndWeekendsGetTheirOwnTimes() async throws {
+        let store = ClockStore(file: nil)
+        let tool = AlarmTool(store: store)
+        let said = "Wake me up at seven on weekdays and eight on weekends"
+        // What the model actually sent (reworded; not literally said).
+        let first = AlarmArguments(action: "set", time: "weekdays at 7 am", label: nil, repeats: "every weekday")
+        let second = AlarmArguments(action: "set", time: "weekends at 8 am", label: nil, repeats: "every weekend")
+        let one = try await CommandContext.$transcript.withValue(said) { try await tool.execute(first) }
+        let two = try await CommandContext.$transcript.withValue(said) { try await tool.execute(second) }
+        #expect(one.text.hasSuffix("on weekdays"))
+        #expect(two.text.hasSuffix("at weekends"))
+        let alarms = store.snapshot.alarms
+        let calendar = Calendar.current
+        #expect(Set(alarms.compactMap(\.repeatDays)) == [Set(AlarmRepeat.weekdays), [1, 7]])
+        let weekday = try #require(alarms.first { $0.repeatDays == Set(AlarmRepeat.weekdays) })
+        let weekend = try #require(alarms.first { $0.repeatDays == [1, 7] })
+        #expect(calendar.component(.hour, from: weekday.fireDate) == 7)
+        #expect(calendar.component(.hour, from: weekend.fireDate) == 8)
+    }
+
+    @Test func aTimeTheUserNeverSaidIsRefused() async throws {
+        let tool = AlarmTool(store: ClockStore(file: nil))
+        let said = "Wake me up at seven on weekdays and eight on weekends"
+        await #expect(throws: ToolError.self) {
+            try await CommandContext.$transcript.withValue(said) {
+                try await tool.execute(AlarmArguments(action: "set", time: "9 am", label: nil, repeats: "every weekday"))
+            }
+        }
+    }
+
+    @Test func threeTimersKeepTheirLengths() async throws {
+        let store = ClockStore(file: nil)
+        let tool = TimerTool(store: store)
+        let said = "run three timers one of 10 seconds one for 20 seconds and another for 30 seconds"
+        for duration in ["10 seconds", "20 seconds", "half a minute"] {
+            _ = try await CommandContext.$transcript.withValue(said) {
+                try await tool.execute(TimerArguments(action: "start", duration: duration, label: nil))
+            }
+        }
+        #expect(store.snapshot.timers.map(\.duration).sorted() == [10, 20, 30])
+    }
+
+    @Test func listingHasNoLabel() throws {
+        let args = try #require(DirectCommand("do I have any alarms set").flatMap { AlarmTool().directArguments(for: $0) })
+        #expect(args.action == "list")
+        #expect(args.label == nil)
+    }
+
+    @Test func findsEveryTimeSaid() {
+        #expect(SpokenWhen.clockTimes(in: "wake me up at seven on weekdays and eight on weekends").map(\.hour) == [7, 8])
+        #expect(SpokenDuration.all(in: "one of 10 seconds one for 20 seconds and another for 30 seconds") == [10, 20, 30])
+    }
+}

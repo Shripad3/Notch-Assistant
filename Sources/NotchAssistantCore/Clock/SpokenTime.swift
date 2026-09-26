@@ -119,6 +119,18 @@ public enum SpokenDuration {
         find(in: SpokenWords(text))?.seconds
     }
 
+    /// Every duration said, in order: "one of 10 seconds, one of 20" → [10, 20].
+    static func all(in text: String) -> [TimeInterval] {
+        let words = SpokenWords(text)
+        var found: [TimeInterval] = []
+        var start = 0
+        while let (seconds, range) = find(in: words, from: start) {
+            found.append(seconds)
+            start = range.upperBound
+        }
+        return found
+    }
+
     /// The first duration in the words, and where it is.
     static func find(in words: SpokenWords, from start: Int = 0) -> (seconds: TimeInterval, range: Range<Int>)? {
         guard start < words.count else { return nil }
@@ -274,6 +286,41 @@ public struct SpokenWhen: Equatable, Sendable {
     }
 
     enum Meridiem { case am, pm }
+
+    /// Every time of day said, as (hour, minute, whether am/pm was said):
+    /// "seven on weekdays and eight on weekends" → [(7, 0), (8, 0)]. Hours
+    /// are 0–23 when am/pm was said, else as spoken.
+    static func clockTimes(in text: String) -> [(hour: Int, minute: Int, exact: Bool)] {
+        let words = SpokenWords(text)
+        var times: [(hour: Int, minute: Int, exact: Bool)] = []
+        var index = 0
+        while index < words.count {
+            // Bare numbers count here ("seven on weekdays"): the model
+            // restated them, so they only need to match, not stand alone.
+            if let found = timeOfDay(in: words, at: index) {
+                var hour = found.hour
+                switch found.meridiem {
+                case .pm?: if hour < 12 { hour += 12 }
+                case .am?: if hour == 12 { hour = 0 }
+                case nil: break
+                }
+                times.append((hour, found.minute, found.meridiem != nil))
+                index = max(index + 1, found.consumed.max().map { $0 + 1 } ?? index + 1)
+            } else {
+                index += 1
+            }
+        }
+        return times
+    }
+
+    /// True when a time the model gave was among those the user said.
+    static func wasSaid(_ date: Date, in text: String, calendar: Calendar = .current) -> Bool {
+        let clock = calendar.dateComponents([.hour, .minute], from: date)
+        guard let hour = clock.hour, let minute = clock.minute else { return false }
+        return clockTimes(in: text).contains { said in
+            said.minute == minute && (said.exact ? said.hour == hour : said.hour % 12 == hour % 12)
+        }
+    }
 
     private static func next(hour: Int, minute: Int, after now: Date, calendar: Calendar) -> Date? {
         guard let today = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: now) else { return nil }

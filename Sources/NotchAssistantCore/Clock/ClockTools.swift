@@ -16,6 +16,7 @@ enum ClockPhrases {
         "for", "of", "to", "on", "is", "at", "in", "and", "all", "every", "this", "that", "add", "up", "me", "wake", "please",
         "how", "much", "long", "left", "check", "put", "i", "want", "need", "can", "you", "could", "hey", "okay", "ok",
         "am", "pm", "oclock", "tomorrow", "today", "tonight", "morning", "evening", "afternoon", "night",
+        "do", "does", "have", "has", "got", "any", "set", "there", "are", "what", "whats", "which", "when", "list", "show",
     ]).union(cancelWords).union(pauseWords).union(resumeWords).union(SpokenDuration.unitWords).union(SpokenWords.numberWords)
 
     /// A name the user gave: "set a pasta timer", "timer called pasta",
@@ -158,11 +159,16 @@ struct TimerTool: AssistantTool {
         return timers.map { "\($0.name): \(ClockFormat.spoken($0.remaining()))\($0.isPaused ? ", paused" : "")" }.joined(separator: ". ")
     }
 
-    /// The model's duration if the user said it, else one found in what
-    /// they said.
+    /// The model's duration when the user said that length, even in other
+    /// words ("90 minutes" for "an hour and a half"). Otherwise the one
+    /// duration the user said; with several ("10, 20 and 30 seconds") there
+    /// is no guessing which.
     private func duration(_ spoken: String?) -> TimeInterval? {
-        if let spoken = ClockPhrases.grounded(spoken), let seconds = SpokenDuration.parse(spoken) { return seconds }
-        return CommandContext.transcript.flatMap(SpokenDuration.parse)
+        let model = spoken.flatMap(SpokenDuration.parse)
+        guard let transcript = CommandContext.transcript else { return model }
+        let said = SpokenDuration.all(in: transcript)
+        if let model, said.contains(model) { return model }
+        return said.count == 1 ? said[0] : nil
     }
 
     /// "set a timer for 10 minutes", "10 minute pasta timer", "how long is
@@ -240,14 +246,13 @@ struct AlarmTool: AssistantTool {
         let now = Date()
         switch arguments.action {
         case "set":
-            guard let when = when(arguments.time, now: now), when.hasTime else {
+            guard let (when, text) = when(arguments.time, now: now), when.hasTime else {
                 throw ToolError("For what time? Say “set an alarm for 7 am”")
             }
-            if let days = repeatDays(arguments.repeats) {
+            if let days = try repeatDays(arguments.repeats) {
                 // "every weekday at 7" is 7 am unless said otherwise: read
                 // the hour as said, as with "tomorrow at 7".
-                let source = ClockPhrases.grounded(arguments.time) ?? CommandContext.transcript
-                let clock = source.flatMap { SpokenWhen.parse("tomorrow " + $0, now: now)?.date } ?? when.date
+                let clock = SpokenWhen.parse("tomorrow " + text, now: now)?.date ?? when.date
                 guard let first = AlarmRepeat.next(after: now, at: clock, on: days) else { throw ToolError("I couldn't work out when that alarm rings") }
                 let alarm = store.addAlarm(at: first, label: label, repeatDays: days)
                 let time = first.formatted(date: .omitted, time: .shortened)
@@ -263,7 +268,7 @@ struct AlarmTool: AssistantTool {
         case "cancel":
             var candidates = alarms
             // "cancel my 7 am alarm": the alarm at that time.
-            if let when = when(arguments.time, now: now), when.hasTime {
+            if let (when, _) = when(arguments.time, now: now), when.hasTime {
                 let calendar = Calendar.current
                 let wanted = calendar.dateComponents([.hour, .minute], from: when.date)
                 candidates = alarms.filter { calendar.dateComponents([.hour, .minute], from: $0.fireDate) == wanted }
@@ -290,15 +295,33 @@ struct AlarmTool: AssistantTool {
         when.first?.isNumber == true ? "at \(when)" : when
     }
 
-    /// The model's repeat if the user said it, else one in what they said.
-    private func repeatDays(_ spoken: String?) -> Set<Int>? {
-        if let spoken = ClockPhrases.grounded(spoken), let days = AlarmRepeat.parse(spoken) { return days }
-        return CommandContext.transcript.flatMap(AlarmRepeat.parse)
+    /// The model's days when the user said them, even in other words
+    /// ("every weekday" for "on weekdays"). A command with one alarm uses
+    /// the days it said; with several ("7 on weekdays and 8 on weekends")
+    /// the model's split is the only one there is, so it must check out.
+    private func repeatDays(_ spoken: String?) throws -> Set<Int>? {
+        let model = spoken.flatMap(AlarmRepeat.parse)
+        guard let transcript = CommandContext.transcript else { return model }
+        guard let said = AlarmRepeat.parse(transcript) else { return nil }
+        if let model, model.isSubset(of: said) { return model }
+        guard SpokenWhen.clockTimes(in: transcript).count <= 1 else {
+            throw ToolError("I couldn't tell which days each alarm is for; set them one at a time")
+        }
+        return said
     }
 
-    private func when(_ spoken: String?, now: Date) -> SpokenWhen? {
-        if let spoken = ClockPhrases.grounded(spoken), let when = SpokenWhen.parse(spoken, now: now) { return when }
-        return CommandContext.transcript.flatMap { SpokenWhen.parse($0, now: now) }
+    /// The model's time when the user said it, with the text to read it
+    /// from; otherwise the one time in what the user said.
+    private func when(_ spoken: String?, now: Date) -> (when: SpokenWhen, text: String)? {
+        guard let transcript = CommandContext.transcript else {
+            return spoken.flatMap { text in SpokenWhen.parse(text, now: now).map { ($0, text) } }
+        }
+        if let spoken, let when = SpokenWhen.parse(spoken, now: now),
+           Grounding.mentions(spoken, in: transcript) || (when.hasTime && SpokenWhen.wasSaid(when.date, in: transcript)) {
+            return (when, spoken)
+        }
+        guard SpokenWhen.clockTimes(in: transcript).count <= 1 else { return nil }
+        return SpokenWhen.parse(transcript, now: now).map { ($0, transcript) }
     }
 
     /// "set an alarm for 7 am", "wake me up at 6:30 tomorrow", "alarm for
