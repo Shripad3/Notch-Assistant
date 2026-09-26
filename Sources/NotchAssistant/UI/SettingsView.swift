@@ -300,6 +300,7 @@ private struct ToolToggle: View {
         case .files: parts.append("Needs Files and Folders")
         case .automation: parts.append("Needs Automation")
         case .accessibility: parts.append("Needs Accessibility")
+        case .reminders: parts.append("Needs Reminders")
         case .varies: parts.append("May need permissions")
         }
         return parts.joined(separator: " · ")

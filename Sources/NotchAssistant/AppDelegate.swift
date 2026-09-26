@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var wakeAccent: String?
     private var wakeEvents: AsyncStream<ActivationEvent>.Continuation?
     private var wakeTask: Task<Void, Never>?
+    private let clockNotifier = SystemClockNotifier()
 
     func showSettings() {
         settings.show()
@@ -74,6 +75,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         status.onSelect = { id in Task { await coordinator.select(id) } }
         status.onConfirm = { confirmed in Task { await coordinator.resolveConfirmation(confirmed) } }
+        status.onAlert = { snooze in Task { await coordinator.resolveAlert(snooze: snooze) } }
+        ClockStore.shared.start(
+            notifier: clockNotifier,
+            onChange: { [status] snapshot in Task { @MainActor in status.clock = snapshot } },
+            onFire: { alert in Task { await coordinator.ring(alert) } }
+        )
         // The display fallback setting lives in UserDefaults.
         defaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: nil, queue: .main
@@ -145,6 +152,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ResultItem(id: "preview_3", title: "Invoice August.pdf", detail: "3 weeks ago", symbol: "doc.richtext"),
             ]), .seconds(5)),
             (.error(AssistantFailure("Microphone access is off for Notch Assistant", link: .microphone)), .seconds(4)),
+            (.alert(.preview(.timer)), .seconds(7)),
+            (.alert(.preview(.alarm)), .seconds(7)),
             (.idle, .zero),
         ]
         return Task {

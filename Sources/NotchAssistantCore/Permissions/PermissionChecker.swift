@@ -1,7 +1,9 @@
 import ApplicationServices
 import AVFoundation
+import EventKit
 import FoundationModels
 import Speech
+import UserNotifications
 
 public enum PermissionStatus: Sendable, Equatable {
     case granted
@@ -46,6 +48,10 @@ public enum PermissionChecker {
                            link: .automation, status: systemEventsStatus),
             PermissionItem(id: "automation.shortcuts", title: "Automation: Shortcuts", neededFor: "Do Not Disturb",
                            link: .automation, status: shortcutsStatus),
+            PermissionItem(id: "reminders", title: "Reminders", neededFor: "Adding reminders by voice",
+                           link: .reminders, status: reminders()),
+            PermissionItem(id: "notifications", title: "Notifications", neededFor: "Timers and alarms, if the app isn't running when they're due",
+                           link: .notifications, status: await notifications()),
             PermissionItem(id: "files", title: "Files and Folders", neededFor: "File search and open (v2), metadata only",
                            link: .filesAndFolders, status: .askedOnFirstUse),
             PermissionItem(id: "camera", title: "Camera", neededFor: "Gestures only (v4)",
@@ -79,6 +85,24 @@ public enum PermissionChecker {
         case .authorized: .granted
         case .notDetermined: .notRequested
         default: .denied
+        }
+    }
+
+    private static func reminders() -> PermissionStatus {
+        switch EKEventStore.authorizationStatus(for: .reminder) {
+        case .fullAccess: .granted
+        case .notDetermined: .askedOnFirstUse
+        default: .denied
+        }
+    }
+
+    /// Read only inside the app: UserNotifications needs a bundle.
+    private static func notifications() async -> PermissionStatus {
+        guard Bundle.main.bundleIdentifier != nil else { return .unknown }
+        switch await UNUserNotificationCenter.current().notificationSettings().authorizationStatus {
+        case .authorized, .provisional: return .granted
+        case .notDetermined: return .askedOnFirstUse
+        default: return .denied
         }
     }
 

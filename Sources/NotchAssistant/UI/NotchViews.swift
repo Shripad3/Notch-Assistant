@@ -50,6 +50,20 @@ struct NotchExpandedView: View {
             if case .list(_, let items) = status.state {
                 ResultList(items: items) { status.onSelect?($0) }
             }
+            if case .alert(let alert) = status.state {
+                HStack {
+                    Text("Or say “Alfred, stop”\(alert.canSnooze ? " / “snooze”" : "")")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if alert.canSnooze {
+                        Button("Snooze \(ClockStore.snoozeMinutes) min") { status.onAlert?(true) }
+                    }
+                    Button("Stop") { status.onAlert?(false) }
+                        .keyboardShortcut(.defaultAction)
+                }
+                .controlSize(.small)
+            }
             if case .confirm(_, let items) = status.state {
                 ResultList(items: items, select: nil)
                 HStack {
@@ -115,12 +129,14 @@ struct NotchExpandedView: View {
         case .thinking: "Thinking"
         case .acting(let tool, _): tool.title
         case .result(let outcome), .reply(let outcome), .list(let outcome, _), .confirm(let outcome, _): outcome
+        case .alert(let alert): alert.title
         case .error(let failure): failure.message
         }
     }
 
     private var detail: String? {
         switch status.state {
+        case .alert(let alert): alert.message
         case .listening(let partial): partial.isEmpty ? nil : partial
         case .thinking(let transcript): "“\(transcript)”"
         case .acting(_, let target): target.isEmpty ? nil : target
@@ -150,6 +166,10 @@ struct StateGlyph: View {
             Image(systemName: "list.bullet").foregroundStyle(.white)
         case .confirm:
             Image(systemName: "questionmark.circle.fill").foregroundStyle(.yellow)
+        case .alert(let alert):
+            Image(systemName: alert.kind == .timer ? "timer" : "alarm.fill")
+                .foregroundStyle(.orange)
+                .symbolEffect(.wiggle, options: .repeating)
         case .error:
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
         }

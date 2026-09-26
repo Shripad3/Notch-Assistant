@@ -9,12 +9,16 @@ public enum SystemSettingsPane: String, Sendable, Equatable, CaseIterable {
     case accessibility = "Privacy_Accessibility"
     case automation = "Privacy_Automation"
     case filesAndFolders = "Privacy_FilesAndFolders"
+    case reminders = "Privacy_Reminders"
     case appleIntelligence
+    case notifications
 
     public var url: URL {
         switch self {
         case .appleIntelligence:
             URL(string: "x-apple.systempreferences:com.apple.Siri-Settings.extension")!
+        case .notifications:
+            URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!
         default:
             URL(string: "x-apple.systempreferences:com.apple.preference.security?\(rawValue)")!
         }

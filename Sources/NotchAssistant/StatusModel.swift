@@ -1,3 +1,4 @@
+import Foundation
 import NotchAssistantCore
 import Observation
 
@@ -38,6 +39,45 @@ final class StatusModel {
     @ObservationIgnored var onSelect: ((String) -> Void)?
     /// The Confirm (true) or Cancel (false) button for a batch of changes.
     @ObservationIgnored var onConfirm: ((Bool) -> Void)?
+    /// A ringing alert's Snooze (true) or Stop (false) button.
+    @ObservationIgnored var onAlert: ((Bool) -> Void)?
+
+    /// Timers, alarms and the stopwatch, for the menu bar.
+    var clock = ClockSnapshot() {
+        didSet { updateTicker() }
+    }
+    /// Advances every second while a timer or the stopwatch runs, so the
+    /// menu bar counts down; no ticking otherwise.
+    private(set) var now = Date()
+    @ObservationIgnored private var ticker: Timer?
+
+    private func updateTicker() {
+        now = Date()
+        guard clock.isTicking else {
+            ticker?.invalidate()
+            ticker = nil
+            return
+        }
+        guard ticker == nil else { return }
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.now = Date() }
+        }
+        timer.tolerance = 0.1
+        RunLoop.main.add(timer, forMode: .common)
+        ticker = timer
+    }
+
+    /// Shown beside the menu bar icon: the soonest running timer, else a
+    /// running stopwatch.
+    var menuBarCountdown: String? {
+        if let timer = clock.timers.filter({ !$0.isPaused }).min(by: { $0.fireDate < $1.fireDate }) {
+            return ClockFormat.clock(timer.remaining(at: now))
+        }
+        if clock.stopwatch.isRunning {
+            return ClockFormat.clock(clock.stopwatch.elapsed(at: now))
+        }
+        return nil
+    }
 
     func receive(level newLevel: Float) {
         // Rise instantly, fall gently, so the bars don't flicker.
@@ -59,6 +99,7 @@ final class StatusModel {
         case .reply: "text.bubble.fill"
         case .list: "list.bullet"
         case .confirm: "questionmark.circle.fill"
+        case .alert: "alarm.fill"
         case .error: "exclamationmark.triangle.fill"
         }
     }
@@ -72,6 +113,7 @@ final class StatusModel {
         case .thinking(let transcript): "Thinking: “\(transcript)”"
         case .acting(let tool, let target): "\(tool.title): \(target)"
         case .result(let outcome), .reply(let outcome), .list(let outcome, _), .confirm(let outcome, _): outcome
+        case .alert(let alert): alert.title
         case .error(let failure): failure.message
         }
     }

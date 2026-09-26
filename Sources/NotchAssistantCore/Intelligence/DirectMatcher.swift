@@ -6,6 +6,9 @@ public struct DirectCommand: Sendable, Equatable {
     public let text: String
     public let verb: String
     public let rest: String
+    /// The transcript as said, for tools that parse "7:30" or "1.5 hours",
+    /// which `text` splits apart.
+    public let original: String
 
     static let verbs = ["go to", "look up", "search for", "open", "launch", "start", "search", "google", "play", "watch"]
     private static let fillers = ["please ", "can you ", "could you ", "hey "]
@@ -17,6 +20,7 @@ public struct DirectCommand: Sendable, Equatable {
         }
         if text.hasSuffix(" please") { text.removeLast(" please".count) }
         guard !text.isEmpty else { return nil }
+        self.original = transcript
         self.text = text
         if let verb = Self.verbs.first(where: { text.hasPrefix($0 + " ") }) {
             self.verb = verb
@@ -45,8 +49,7 @@ enum DirectMatcher {
         guard let command = DirectCommand(transcript) else { return nil }
         // Compound commands are several steps; only the model plans those.
         // Without this, "open Arc and play the … video" matched as a file.
-        let padded = " \(command.text) "
-        guard !padded.contains(" and "), !padded.contains(" then ") else { return nil }
+        guard !isCompound(command.text) else { return nil }
         // Registry order decides ties: an installed app beats a website of
         // the same name, as with "open Spotify".
         for tool in tools {
@@ -55,5 +58,19 @@ enum DirectMatcher {
             }
         }
         return nil
+    }
+
+    /// "and" that joins two commands, not "an hour and a half", "1 hour
+    /// and 30 minutes" or a reminder's "bread and milk".
+    static func isCompound(_ text: String) -> Bool {
+        if ["remind me ", "set a reminder ", "add a reminder "].contains(where: text.hasPrefix) { return false }
+        var padded = " \(text) "
+        for joined in [" and a half ", " and half "] {
+            padded = padded.replacingOccurrences(of: joined, with: " ")
+        }
+        // "1 hour and 30 minutes".
+        padded = padded.replacingOccurrences(
+            of: #" (hours?|minutes?) and (\w+ ){1,2}(minutes?|seconds?) "#, with: " $1 $3 ", options: .regularExpression)
+        return padded.contains(" and ") || padded.contains(" then ")
     }
 }

@@ -30,6 +30,7 @@ final class NotchController: NotchPresenter {
 
     private let display: DisplayResolver
     private let speaker = Speaker()
+    private lazy var chime = AlarmChime(speaker: speaker)
     private let notch: DynamicNotch<NotchExpandedView, NotchLeadingView, NotchTrailingView>
     private var desired = Presentation.hidden
     private var applied = Presentation.hidden
@@ -63,7 +64,12 @@ final class NotchController: NotchPresenter {
         status.state = state
         onChange?(state)
         refresh()
-        speaker.speak(state, visible: desired.mode != .hidden)
+        if case .alert(let alert) = state {
+            chime.start(alert)
+        } else {
+            chime.stop()
+            speaker.speak(state, visible: desired.mode != .hidden)
+        }
     }
 
     func audioLevel(_ level: Float) {
@@ -103,7 +109,7 @@ final class NotchController: NotchPresenter {
 
         if let screen = display.targetScreen {
             let mode: Mode = switch status.state {
-            case .result, .reply, .list, .confirm, .error: .expanded
+            case .result, .reply, .list, .confirm, .alert, .error: .expanded
             default: notch.isHovering ? .expanded : .compact
             }
             return Presentation(mode: mode, displayID: screen.displayID)

@@ -21,6 +21,14 @@ public actor AssistantCoordinator {
     private var pendingConfirmation: String?
     /// How long the next result stays up; longer for undoable file changes.
     private var resultDelay: Duration = .seconds(3)
+    /// The alert the user interrupted by speaking: "stop" and "snooze" apply
+    /// to it.
+    private var interruptedAlert: ClockAlert?
+    /// Alerts that came due while the notch was busy; shown once it's idle.
+    private var queuedAlerts: [ClockAlert] = []
+    private let clock: ClockStore
+    /// How long an alert rings before it counts as missed.
+    static let ringFor: Duration = .seconds(60)
     private static let undoLabel = ToolLabel(name: "organiseFiles", title: "Files", symbol: "folder")
     private var work: Task<Void, Never>?
     private var dismissal: Task<Void, Never>?
@@ -29,8 +37,10 @@ public actor AssistantCoordinator {
         transcription: any TranscriptionService,
         engine: any AssistantEngine,
         registry: ToolRegistry,
-        presenter: any NotchPresenter
+        presenter: any NotchPresenter,
+        clock: ClockStore = .shared
     ) {
+        self.clock = clock
         self.transcription = transcription
         self.engine = engine
         self.registry = registry
@@ -56,10 +66,18 @@ public actor AssistantCoordinator {
 
     /// Arbitration (spec §6): accepted only when Idle, with a 1 s debounce.
     public func activationBegan(wake: WakeContext? = nil) async {
-        // Idle, or answering a pending confirmation by voice.
+        // Idle, answering a pending confirmation by voice, or stopping an
+        // alert ("Alfred, stop").
         var answering = false
-        if case .confirm = state { answering = true }
-        guard state == .idle || answering, !isSuspended else { return }
+        interruptedAlert = nil
+        switch state {
+        case .confirm: answering = true
+        case .alert(let alert):
+            answering = true
+            interruptedAlert = alert
+        default: break
+        }
+        guard state == .idle || answering, !isSuspended || interruptedAlert != nil else { return }
         if !answering {
             pendingConfirmation = nil
             Confirmations.discard()
@@ -125,6 +143,23 @@ public actor AssistantCoordinator {
         }
     }
 
+    /// A timer or alarm is due: ring now, or as soon as the notch is free.
+    public func ring(_ alert: ClockAlert) async {
+        guard state == .idle else {
+            queuedAlerts.append(alert)
+            return
+        }
+        session += 1
+        await apply(.ring(alert), session: session)
+    }
+
+    /// The notch's Stop or Snooze button.
+    public func resolveAlert(snooze: Bool) async {
+        guard case .alert(let alert) = state else { return }
+        if snooze, alert.canSnooze { clock.snooze(alert) }
+        await apply(.dismiss, session: session)
+    }
+
     /// Escape: back to Idle from any non-idle state, aborting in-flight work.
     public func cancel() async {
         guard state != .idle else { return }
@@ -157,6 +192,23 @@ public actor AssistantCoordinator {
             transcript = command
         }
         await apply(.endpoint(transcript), session: id)
+
+        // Spoken over a ringing alert: "stop" and "snooze" are for it;
+        // anything else is a new command (the alert is already silenced).
+        if let alert = interruptedAlert {
+            interruptedAlert = nil
+            switch AlertReply.interpret(transcript) {
+            case .snooze where alert.canSnooze:
+                let date = clock.snooze(alert)
+                await apply(.textOnly("Snoozed until \(date.formatted(date: .omitted, time: .shortened))"), session: id)
+                return
+            case .snooze, .stop:
+                await apply(.textOnly(alert.kind == .timer ? "Timer stopped" : "Alarm stopped"), session: id)
+                return
+            case nil:
+                break
+            }
+        }
 
         // A pending batch: "yes" applies it, "no" drops it, anything else is
         // a new command and the batch is dropped.
@@ -278,9 +330,16 @@ public actor AssistantCoordinator {
         }
         scheduleDismissal(after: next, session: id)
         await presenter.render(next)
+        if next == .idle, !queuedAlerts.isEmpty {
+            await ring(queuedAlerts.removeFirst())
+        }
     }
 
     private func dismiss(session id: Int) async {
+        if case .alert(let alert) = state, id == session {
+            // Rang for a minute with nobody there.
+            clock.missed(alert)
+        }
         if case .confirm = state, id == session {
             // Unanswered: the batch is dropped, nothing changes.
             pendingConfirmation = nil
@@ -300,6 +359,7 @@ public actor AssistantCoordinator {
         case .reply: delay = .seconds(4)
         case .list: delay = .seconds(10)
         case .error: delay = .seconds(5)
+        case .alert: delay = Self.ringFor
         default: return
         }
         dismissal = Task {

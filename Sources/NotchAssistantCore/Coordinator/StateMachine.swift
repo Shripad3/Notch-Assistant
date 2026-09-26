@@ -14,6 +14,8 @@ public enum AssistantState: Sendable, Equatable {
     case list(String, [ResultItem])
     /// A change waiting for yes or no (a batch of files).
     case confirm(String, [ResultItem])
+    /// A timer or alarm going off, until stopped.
+    case alert(ClockAlert)
     case error(AssistantFailure)
 }
 
@@ -34,6 +36,8 @@ public enum AssistantEvent: Sendable, Equatable {
     case selected(String)
     case failure(AssistantFailure)
     case dismiss
+    /// A timer or alarm is due.
+    case ring(ClockAlert)
 }
 
 public enum StateMachine {
@@ -46,6 +50,12 @@ public enum StateMachine {
     public static func transition(from state: AssistantState, on event: AssistantEvent) -> AssistantState? {
         switch (state, event) {
         case (.idle, .activation):
+            .listening(partial: "")
+        case (.idle, .ring(let alert)):
+            .alert(alert)
+        case (.alert, .activation):
+            // "Alfred, stop" / "Alfred, snooze": the sound stops as soon as
+            // the user speaks.
             .listening(partial: "")
         case (.listening, .partial(let text)):
             .listening(partial: text)
@@ -75,7 +85,7 @@ public enum StateMachine {
              (.list, .failure(let failure)),
              (.confirm, .failure(let failure)):
             .error(failure)
-        case (.result, .dismiss), (.reply, .dismiss), (.list, .dismiss), (.confirm, .dismiss), (.error, .dismiss):
+        case (.result, .dismiss), (.reply, .dismiss), (.list, .dismiss), (.confirm, .dismiss), (.error, .dismiss), (.alert, .dismiss):
             .idle
         case (.idle, .cancel):
             nil

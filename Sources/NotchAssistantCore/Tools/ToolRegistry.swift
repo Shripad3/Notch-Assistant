@@ -13,6 +13,13 @@ public struct ToolRegistry: Sendable {
     }
 
     public static let standard = ToolRegistry(tools: [
+        // First: their phrasings are specific, and "stop the timer" or
+        // "start a stopwatch" must not reach Spotify or app launching.
+        AnyAssistantTool(TimerTool()),
+        AnyAssistantTool(AlarmTool()),
+        AnyAssistantTool(StopwatchTool()),
+        AnyAssistantTool(ReminderTool()),
+        AnyAssistantTool(CurrentTimeTool()),
         AnyAssistantTool(OpenAppTool()),
         AnyAssistantTool(OpenURLTool()),
         // Before Spotify and files: "play … on YouTube" and "… video" are its.

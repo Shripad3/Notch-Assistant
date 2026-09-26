@@ -2,7 +2,7 @@
 
 Sep 24, 2026 · @Batman · updated Sep 26, 2026 to match the build
 
-> **Status.** v0–v3 are built and in daily use, plus weather and routines, which were not in the original plan. v4 (gestures) has not started. Where the build departs from the original design, the section says so, and §1.4 lists every departure in one place. The assistant is called **Alfred**, after its wake word.
+> **Status.** v0–v3 are built and in daily use, plus weather, routines and the clock (timers, alarms, stopwatch, reminders), which were not in the original plan. v4 (gestures) has not started. Where the build departs from the original design, the section says so, and §1.4 lists every departure in one place. The assistant is called **Alfred**, after its wake word.
 
 ## Overview and goals
 
@@ -43,12 +43,12 @@ The requirement is **no cloud AI**, not *no network*. Inference is local: no API
 | Intent parsing | Model for every command | Routines, then small talk, then `DirectMatcher` (fixed phrasings), then the model | The 3B model was not deterministic enough for simple commands (§8) |
 | Model context | Every enabled tool shown | `ToolRouter` shows at most 4 tools, picked by keyword | All tools overflowed the 4,096-token context |
 | Argument trust | Executor validation for files | Also *grounding*: a tool refuses an argument the user never said | The model invented URLs, apps, browsers and songs |
-| UI states | Six | Nine: adds Reply (spoken answer), List (pick one) and Confirm (yes/no) | Weather answers, same-named files, batch changes |
+| UI states | Six | Ten: adds Reply (spoken answer), List (pick one), Confirm (yes/no) and Alert (a timer or alarm ringing) | Weather answers, same-named files, batch changes, timers |
 | Spotify | AppleScript; Web API optional | Both: AppleScript for playback, Web API (user's own client ID, loopback OAuth) to resolve songs and playlists | Spoken names rarely match exactly |
 | systemControl | Native APIs only | Volume and mute through CoreAudio; brightness and lock by simulated keys (Accessibility); Do Not Disturb through the user's shortcut | macOS has no public API for brightness or Focus. Still no shell. |
 | File search | `NSMetadataQuery` | `MDQuery` on a background thread | `NSMetadataQuery` spun a nested run loop and stalled the main thread |
 | Signing | Free personal team | Apple Development certificate plus a provisioning profile | WeatherKit needs an entitlement from a profile |
-| New capabilities | — | `getWeather`, `runShortcut`, routines, file undo | Requested during use |
+| New capabilities | — | `getWeather`, `runShortcut`, routines, file undo, clock tools | Requested during use |
 
 ## Target environment
 
@@ -150,6 +150,9 @@ stateDiagram-v2
   Reply --> Idle: after 4s
   List --> Idle: after 10s
   Confirm --> Idle: after 20s, nothing changed
+  Idle --> Alert: timer or alarm due
+  Alert --> Listening: "Alfred, stop / snooze"
+  Alert --> Idle: Stop, Snooze, Escape, or after 60s (missed)
   Thinking --> Error: failure
   Acting --> Error: failure
   Error --> Idle: after 5s
@@ -167,6 +170,7 @@ stateDiagram-v2
 | Reply | Speech glyph | A spoken answer (weather, small talk, a routine's closing line) |
 | List | Count | Up to ten files to click; a single match opens directly |
 | Confirm | Question glyph | The files a batch will change; answer by voice ("yes" / "no") or click |
+| Alert | Wiggling timer or alarm glyph | What rang, with Stop (and Snooze for alarms); a chime repeats until stopped |
 | Error | Amber glyph | Reason and, if a permission is missing, a button to the right settings pane |
 
 `Escape` cancels from any non-idle state and returns to Idle immediately, aborting in-flight tool calls.
@@ -350,6 +354,11 @@ Every tool conforms to `AssistantTool`: a name, a description the model reads, a
 | `undoFileChange` | — | No | Files | It *is* the inverse | v3 |
 | `getWeather` | `place?`, `day` | Yes | None | n/a | after v3 |
 | `runShortcut` | `name` | No | Automation | n/a | after v3 |
+| `timer` | `action`, `duration?`, `label?` | No | None | n/a | after v3 |
+| `alarm` | `action`, `time?`, `label?` | No | None | n/a | after v3 |
+| `stopwatch` | `action` | No | None | n/a | after v3 |
+| `reminder` | `task`, `when?` | No | Reminders | n/a | after v3 |
+| `currentTime` | `what`, `place?` | Only for a place | None | n/a | after v3 |
 
 This table will grow. Two columns are load-bearing for any tool added later: `Reversible`, which drives the undo journal (§9.6), and `Permission`, which generates the settings toggle and the permissions check automatically (§9.8).
 
@@ -397,6 +406,40 @@ Answers aloud: the temperature and conditions now, the day's high and low, and t
 ### runShortcut
 
 Runs one of the user's shortcuts by name ("run my Lights On shortcut"), silently, through Shortcuts Events. This is how lights and other HomeKit scenes are reached: a native app cannot use HomeKit on the Mac without a Catalyst build, and the Shortcuts app already can. The name must be one the user said. The model cannot pick a shortcut on its own.
+
+### Clock: timers, alarms, stopwatch, reminders, time
+
+AlarmKit does not exist on macOS, so the app rings timers and alarms itself.
+
+| Tool | Says | Does |
+| --- | --- | --- |
+| `timer` | "set a timer for 10 minutes", "set a pasta timer for an hour and a half", "how long is left", "pause / resume / cancel the timer", "add 5 minutes to the timer", "cancel all timers" | Several timers at once, optionally named |
+| `alarm` | "set an alarm for 7 am", "wake me up tomorrow at 6:30", "set a gym alarm for 6", "what alarms do I have", "cancel my 7 am alarm" | Alarms up to a week ahead; snooze is 9 minutes |
+| `stopwatch` | "start / stop / resume / reset the stopwatch", "lap", "how long has the stopwatch been running" | One stopwatch, with laps |
+| `reminder` | "remind me to call Mum at 6", "remind me tomorrow to buy milk", "remind me in 20 minutes to check the oven" | Adds to the Reminders app (EventKit), so it syncs to the phone and alerts even when this app is closed |
+| `currentTime` | "what time is it", "what's the date", "what time is it in Tokyo" | Answers aloud; a place is looked up in the time zone database, then Apple's geocoder |
+
+**Parsing.** Durations and times are parsed deterministically (`SpokenDuration`, `SpokenWhen`), not by the model:
+
+- **Durations:** "an hour and a half", "half an hour", "1.5 hours", "twenty five minutes", "quarter of an hour".
+- **Times:** "7 a.m.", "7:30", "seven thirty", "half past 5", "quarter to 8", "noon", "tonight at 8", "Monday at 9", "in 20 minutes".
+- **Hour with no am/pm:** "7" means the next time 7 o'clock comes round: 7 pm if said at 10 am, 7 am if said at 10 pm. With a day ("tomorrow at 7") the hour is taken as said.
+- **Numbers in the task:** a reminder's other numbers are not mistaken for its time, because "at 6" outranks "for 4".
+
+`DirectMatcher` treats "an hour and a half" and a reminder's "bread and milk" as one command, not two. With the model, a duration or time the user did not say is replaced by one parsed from the transcript (grounding).
+
+**Ringing.** `ClockStore` keeps timers, alarms and the stopwatch in `clock.json` (Application Support), so they survive a quit. It runs one task that sleeps until the next one is due, waking at least once a minute, and no task when nothing is pending. When one is due, the notch shows the Alert state:
+
+- A chime plays, the voice says what rang ("Time's up. Your pasta timer is done."), then the chime repeats.
+- **Stop:** the Stop button, Escape, or "Alfred, stop" / "okay" / "I'm up".
+- **Snooze** (alarms only): the Snooze button or "Alfred, snooze".
+- **Anything else said over the alarm** silences it and runs as a normal command.
+- **Busy notch:** an alert that comes due during another command waits until the notch is idle.
+- **Nobody there:** after 60 s the alert stops and leaves a notification.
+
+**When the app isn't running.** Each timer and alarm also has a notification (UserNotifications) scheduled 5 s after it is due. The app withdraws it when it rings the timer or alarm itself. On relaunch, anything more than 5 minutes overdue is dropped, since the notification already told the user.
+
+**Menu bar.** The soonest running timer, or else a running stopwatch, counts down beside the icon. The menu lists each timer (pause, resume, cancel), alarm (cancel) and the stopwatch (stop, resume, reset). The display ticks once a second only while something is running.
 
 ### Routines
 
@@ -577,6 +620,8 @@ Five separate grants, each of which will at some point be missing or revoked. Sh
 | Camera | Gestures only | `...?Privacy_Camera` |
 | Accessibility | In-page navigation, simulated brightness and lock keys | `...?Privacy_Accessibility` |
 | Automation | Spotify, volume, browser tabs, Shortcuts (DND, routines) | `...?Privacy_Automation` |
+| Reminders | Adding reminders by voice | `...?Privacy_Reminders` |
+| Notifications | Backup for timers and alarms when the app isn't running | Notifications settings |
 | Files and Folders | File search, open, rename, move (metadata only; never contents) | ...?Privacy\_FilesAndFolders |
 
 Prefix: `x-apple.systempreferences:com.apple.preference.security`.
@@ -639,6 +684,7 @@ Sources/
     Tools/                   AssistantTool, ToolRegistry, Grounding, one file per tool,
                              Spotify/, Files/ (FileAccess, FileTokens, FileJournal, FileOrganizer)
     Routines/                Routine, Routines (matching, planning, examples)
+    Clock/                   SpokenTime (parsing), ClockStore, ClockTools, ReminderTool
     Display/  Permissions/  Power/  Support/
   PlanCLI/                   type a command, see the plan (no microphone needed)
 Vendor/DynamicNotchKit/      patched copy, see PATCHES.md
@@ -656,11 +702,11 @@ Tests/                       NotchAssistantCoreTests, audio fixtures
 | onnxruntime-swift-package-manager 1.19.2 | MIT | Runs the openWakeWord engine | v2 |
 | mlx-swift + mlx-swift-examples | MIT | Optional local model backend | Not used yet |
 
-Everything else is a system framework: `FoundationModels`, `Speech`, `AVFoundation`, `AppKit`, `SwiftUI`, `IOKit`, `WeatherKit`, `MapKit`, `CoreServices` (Spotlight); `Vision` arrives with v4.
+Everything else is a system framework: `FoundationModels`, `Speech`, `AVFoundation`, `AppKit`, `SwiftUI`, `IOKit`, `WeatherKit`, `MapKit`, `CoreServices` (Spotlight), `EventKit`, `UserNotifications`; `Vision` arrives with v4.
 
 ### Info.plist keys
 
-`NSMicrophoneUsageDescription`, `NSCameraUsageDescription`, `NSSpeechRecognitionUsageDescription`, `NSDesktopFolderUsageDescription`, `NSDocumentsFolderUsageDescription`, `NSDownloadsFolderUsageDescription`, and `NSAppleEventsUsageDescription`. `LSUIElement` set to true.
+`NSMicrophoneUsageDescription`, `NSCameraUsageDescription`, `NSSpeechRecognitionUsageDescription`, `NSDesktopFolderUsageDescription`, `NSDocumentsFolderUsageDescription`, `NSDownloadsFolderUsageDescription`, `NSRemindersFullAccessUsageDescription`, and `NSAppleEventsUsageDescription`. `LSUIElement` set to true.
 
 `NSAppleEventsUsageDescription` is a single string covering all Apple Events the app sends, so it cannot name Spotify and the browser separately. Write one sentence that covers both honestly — macOS shows this text on the first Automation prompt, and the per-application grant is handled by the system, not by additional keys.
 
@@ -708,10 +754,11 @@ Wake word, endpointing, power profiles, file search and open, `controlSpotify`, 
 
 - **Weather** (`getWeather`): WeatherKit with an Open-Meteo fallback.
 - **Routines** and **`runShortcut`**: multi-step phrases, lights through Shortcuts.
+- **Clock**: timers, alarms, stopwatch, reminders and the time (§9).
 
 Candidates next:
 
-- **Timers and alarms.** AlarmKit is not available on macOS, so this would be an in-app timer: a countdown in the notch, a sound and a spoken line when it ends, and a local notification (`UserNotifications`) as a backup. Reminders would go to the Reminders app through EventKit.
+- **Repeating alarms** ("every weekday at 7") and a choice of alarm sound.
 - **A neural voice** (Kokoro).
 - **Release hygiene:** remove the debug-only main-thread watchdog, make a release build, add launch at login.
 
@@ -742,7 +789,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding and routine matching that need no model. About 216 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 240 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist
