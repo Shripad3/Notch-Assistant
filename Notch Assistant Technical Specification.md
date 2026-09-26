@@ -271,7 +271,16 @@ The silence threshold must adapt to the room's noise floor, sampled during the f
 
 `AVSpeechSynthesizer` with a system voice. Free and built in. Speak only when the result is not self-evident — launching an app needs no narration, a failure or a spoken answer does. A "speak responses" setting with options Always / Errors only / Never, defaulting to Errors only. Answers (weather, routines' closing lines) are always spoken unless set to Never.
 
-**As built:** Settings lists installed voices, best quality first. Premium voices (downloaded in System Settings → Accessibility → Spoken Content) sound far less robotic than the enhanced ones. A neural voice such as Kokoro is a possible later addition behind the same `Speaker`.
+**As built:** Settings lists installed voices, best quality first. Premium voices (downloaded in System Settings → Accessibility → Spoken Content) sound far less robotic than the enhanced ones.
+
+**Natural voice (Kokoro).** Kokoro-82M (Apache-2.0) is available as a set of natural voices (British and American, e.g. "George — British"). It runs on the Neural Engine through FluidAudio's Core ML port.
+
+- **Download:** the model (about 80 MB) comes from Hugging Face the first time a Kokoro voice is chosen, into Application Support/NotchAssistant/Kokoro. After that it works offline.
+- **Speed:** measured on the M4 Air, loading from disk takes 0.15 s. The first sentence takes about 0.7 s and later ones about 0.2 s for several seconds of speech.
+- **Memory:** it holds about 500 MB while loaded. So it loads while the user is speaking (to hide the delay) and unloads after 3 idle minutes; the idle footprint doesn't change.
+- **Fallback:** if Kokoro isn't downloaded or fails, the system voice speaks instead.
+- **Structure:** `Speaker` (Core) knows it only through the `NeuralVoice` protocol, so Core and its tests don't depend on FluidAudio.
+- **Dependency:** FluidAudio is added with no package traits, which leaves out its prebuilt text-normalisation binary (used only by non-English voices).
 
 ### Audio session
 
@@ -615,7 +624,7 @@ The tool registry therefore reads settings at session construction, every time.
 | Pane | Contents (as built) |
 | --- | --- |
 | Activation | Open at login (on by default, so alarms ring); hotkey (⌥Space, hold to talk); wake word on/off, engine (speech / model), accent, sensitivity; auto-switch power profiles |
-| Model & Voice | Apple Intelligence status; voice picker with preview; speak responses (Always / Errors only / Never); duck audio while listening |
+| Model & Voice | Apple Intelligence status; voice picker (Kokoro natural voices and system voices) with preview and the Kokoro download; speak responses (Always / Errors only / Never); duck audio while listening |
 | Capabilities | One toggle per tool, generated from registry metadata; search engine; YouTube autoplay; weather city and attribution |
 | Routines | The user's routines: phrases, numbered steps (reordered with up/down arrows), closing line; on/off per routine; examples to start from |
 | Clock | Alarm and timer sounds (system sounds) with a Test button that rings the notch for real; running timers beside the notch on/off |
@@ -719,6 +728,7 @@ Tests/                       NotchAssistantCoreTests, audio fixtures
 | [DynamicNotchKit](https://github.com/MrKai77/DynamicNotchKit) | MIT | Notch window and UI (vendored, patched) | v1 |
 | [openWakeWord](https://github.com/dscripka/openWakeWord) | Apache-2.0 | Wake word models | v2 |
 | onnxruntime-swift-package-manager 1.19.2 | MIT | Runs the openWakeWord engine | v2 |
+| [FluidAudio](https://github.com/FluidInference/FluidAudio) 0.17 (no traits) | Apache-2.0 | Kokoro-82M natural voice on the Neural Engine | after v3 |
 | mlx-swift + mlx-swift-examples | MIT | Optional local model backend | Not used yet |
 
 Everything else is a system framework: `FoundationModels`, `Speech`, `AVFoundation`, `AppKit`, `SwiftUI`, `IOKit`, `WeatherKit`, `MapKit`, `CoreServices` (Spotlight), `EventKit`, `UserNotifications`; `Vision` arrives with v4.
@@ -775,10 +785,10 @@ Wake word, endpointing, power profiles, file search and open, `controlSpotify`, 
 - **Routines** and **`runShortcut`**: multi-step phrases, lights through Shortcuts.
 - **Clock**: timers, alarms (one-off and repeating), stopwatch, reminders and the time (§9).
 - **Calendar**: read-only, from Apple Calendar, Google Calendar or Outlook (§9).
+- **Natural voice**: Kokoro-82M, on device (§7).
 
 Candidates next:
 
-- **A neural voice** (Kokoro).
 - ~~Release hygiene~~ done: `scripts/build-app.sh` builds release by default (the main-thread watchdog, notch preview and browser probe exist only in `debug` builds), and the app opens at login.
 
 ### v4 — Gestures

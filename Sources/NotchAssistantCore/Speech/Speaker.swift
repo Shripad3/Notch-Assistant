@@ -64,11 +64,32 @@ public struct VoiceOption: Sendable, Identifiable, Hashable {
     }
 }
 
-/// Text to speech with a system voice. Speaks only when the result is not
-/// self-evident: an app launching needs no narration, a failure does.
+/// A voice beyond the system's: Kokoro, run by the app. Chosen in Settings
+/// as a voice id starting with `neuralPrefix`.
+@MainActor
+public protocol NeuralVoice: AnyObject {
+    /// Chosen in Settings and downloaded.
+    var isActive: Bool { get }
+    /// Speaks and returns when done. False if it couldn't (the system voice
+    /// is used instead).
+    func speak(_ text: String) async -> Bool
+    func stop()
+    /// Loads the model ahead of speaking, e.g. while the user talks.
+    func warmUp()
+}
+
+/// Text to speech with a system voice, or the natural voice when chosen.
+/// Speaks only when the result is not self-evident: an app launching needs
+/// no narration, a failure does.
 @MainActor
 public final class Speaker {
+    /// Voice ids for the natural voice: "kokoro:bm_george".
+    public static let neuralPrefix = "kokoro:"
+    /// Set by the app at launch.
+    public static var neural: (any NeuralVoice)?
+
     private let synthesizer = AVSpeechSynthesizer()
+    private var neuralTask: Task<Void, Never>?
 
     public init() {}
 
@@ -80,6 +101,9 @@ public final class Speaker {
         switch state {
         case .listening:
             stop()
+            // The reply comes a few seconds from now: load the voice while
+            // the user speaks.
+            Self.neural?.warmUp()
             return
         case .result(let outcome) where mode == .always || (mode == .errorsOnly && !visible):
             text = outcome
@@ -96,12 +120,26 @@ public final class Speaker {
     /// Speaks regardless of the Speak responses setting (voice preview).
     public func say(_ text: String) {
         stop()
+        if let neural = Self.neural, neural.isActive {
+            neuralTask = Task { [weak self] in
+                let spoke = await neural.speak(text)
+                if !spoke, !Task.isCancelled { self?.sayWithSystemVoice(text) }
+            }
+            return
+        }
+        sayWithSystemVoice(text)
+    }
+
+    private func sayWithSystemVoice(_ text: String) {
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = VoiceOption.preferred()
         synthesizer.speak(utterance)
     }
 
     public func stop() {
+        neuralTask?.cancel()
+        neuralTask = nil
+        Self.neural?.stop()
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
     }
 }

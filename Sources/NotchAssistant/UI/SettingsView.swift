@@ -185,6 +185,7 @@ private struct ModelPane: View {
     @AppStorage(VoiceOption.defaultsKey) private var voiceID = ""
     @State private var voices = VoiceOption.available()
     @State private var preview = Speaker()
+    private let kokoro = KokoroVoice.shared
 
     var body: some View {
         Form {
@@ -201,9 +202,25 @@ private struct ModelPane: View {
             Section {
                 Picker("Voice", selection: $voiceID) {
                     Text("Automatic (best available)").tag("")
-                    ForEach(voices) { voice in
-                        Text("\(voice.name) — \(voice.accent) · \(voice.quality)").tag(voice.id)
+                    Section("Natural voices (Kokoro)") {
+                        ForEach(KokoroVoice.voices, id: \.id) { voice in
+                            Text(voice.name).tag(Speaker.neuralPrefix + voice.id)
+                        }
                     }
+                    Section("System voices") {
+                        ForEach(voices) { voice in
+                            Text("\(voice.name) — \(voice.accent) · \(voice.quality)").tag(voice.id)
+                        }
+                    }
+                }
+                .onChange(of: voiceID) { _, id in
+                    // Picking a natural voice downloads the model the first time.
+                    if id.hasPrefix(Speaker.neuralPrefix), kokoro.state != .ready {
+                        Task { await kokoro.download() }
+                    }
+                }
+                if voiceID.hasPrefix(Speaker.neuralPrefix) || kokoro.state != .notDownloaded {
+                    kokoroStatus
                 }
                 HStack {
                     Button("Preview") { preview.say("Good evening. I've opened Spotify for you.") }
@@ -216,6 +233,9 @@ private struct ModelPane: View {
             } header: {
                 Text("Voice")
             } footer: {
+                if voiceID.hasPrefix(Speaker.neuralPrefix) {
+                    Text("Kokoro is an open-source neural voice (Apache-2.0) that runs on this Mac's Neural Engine. It's downloaded once (about 80 MB), then works offline. Until it's ready, the system voice speaks instead.")
+                } else
                 if !voices.contains(where: { $0.quality != "Basic" }) {
                     Text("Only basic voices are installed, which is why it sounds robotic. In System Settings › Accessibility › Spoken Content › System Voice › Manage Voices, download a Premium or Enhanced voice (for example English (UK) › Jamie or Daniel), then click Refresh List.")
                 }
@@ -229,6 +249,29 @@ private struct ModelPane: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    @ViewBuilder private var kokoroStatus: some View {
+        HStack {
+            switch kokoro.state {
+            case .notDownloaded:
+                Text("Natural voice not downloaded").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Download (80 MB)") { Task { await kokoro.download() } }
+            case .downloading:
+                ProgressView().controlSize(.small)
+                Text("Downloading the natural voice…").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+            case .ready:
+                Text("Natural voice ready, works offline").font(.caption).foregroundStyle(.green)
+                Spacer()
+                Button("Remove Download") { Task { await kokoro.remove() } }
+            case .failed(let message):
+                Text(message).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                Spacer()
+                Button("Try Again") { Task { await kokoro.download() } }
+            }
+        }
     }
 }
 
