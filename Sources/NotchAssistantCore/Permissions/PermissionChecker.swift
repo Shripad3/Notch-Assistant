@@ -32,22 +32,26 @@ public enum PermissionChecker {
         async let spotify = automation("com.spotify.client")
         async let systemEvents = automation("com.apple.systemevents")
         async let shortcuts = automation("com.apple.shortcuts.events")
+        async let notes = automation("com.apple.Notes")
         let spotifyStatus = await spotify
         let systemEventsStatus = await systemEvents
         let shortcutsStatus = await shortcuts
+        let notesStatus = await notes
         return [
             PermissionItem(id: "microphone", title: "Microphone", neededFor: "All voice input",
                            link: .microphone, status: capture(.audio)),
             PermissionItem(id: "speech", title: "Speech Recognition", neededFor: "Turning speech into text, on this Mac",
                            link: .speechRecognition, status: speech()),
-            PermissionItem(id: "accessibility", title: "Accessibility", neededFor: "Brightness and locking the screen; YouTube auto-play",
+            PermissionItem(id: "accessibility", title: "Accessibility", neededFor: "Brightness, locking the screen, arranging windows, pasting; YouTube auto-play",
                            link: .accessibility, status: AXIsProcessTrusted() ? .granted : .notRequested),
             PermissionItem(id: "automation.spotify", title: "Automation: Spotify", neededFor: "Playing and pausing music",
                            link: .automation, status: spotifyStatus),
             PermissionItem(id: "automation.systemevents", title: "Automation: System Events", neededFor: "Putting the Mac to sleep",
                            link: .automation, status: systemEventsStatus),
-            PermissionItem(id: "automation.shortcuts", title: "Automation: Shortcuts", neededFor: "Do Not Disturb",
+            PermissionItem(id: "automation.shortcuts", title: "Automation: Shortcuts", neededFor: "Do Not Disturb, routines",
                            link: .automation, status: shortcutsStatus),
+            PermissionItem(id: "automation.notes", title: "Automation: Notes", neededFor: "Quick notes by voice",
+                           link: .automation, status: notesStatus),
             PermissionItem(id: "calendars", title: "Calendars", neededFor: "Reading your calendar aloud (Apple Calendar)",
                            link: .calendars, status: calendars()),
             PermissionItem(id: "reminders", title: "Reminders", neededFor: "Adding reminders by voice",

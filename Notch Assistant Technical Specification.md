@@ -369,6 +369,9 @@ Every tool conforms to `AssistantTool`: a name, a description the model reads, a
 | `reminder` | `task`, `when?` | No | Reminders | n/a | after v3 |
 | `currentTime` | `what`, `place?` | Only for a place | None | n/a | after v3 |
 | `calendar` | `action`, `when?` | Google/Outlook only | Calendar | n/a — read-only | after v3 |
+| `arrangeWindow` | `action`, `app?` | No | Accessibility | n/a | after v3 |
+| `clipboard` | `action` | No | Accessibility (paste only) | n/a | after v3 |
+| `takeNote` | `text` | No | Automation (Notes) | n/a — only creates | after v3 |
 
 This table will grow. Two columns are load-bearing for any tool added later: `Reversible`, which drives the undo journal (§9.6), and `Permission`, which generates the settings toggle and the permissions check automatically (§9.8).
 
@@ -464,6 +467,12 @@ Reads the connected calendar aloud: "what's on my calendar tomorrow", "when's my
 | Outlook | Microsoft Graph `calendarView`, scope `Calendars.Read`, tenant `common` | Their own app registration (public client, redirect `http://localhost`): client ID only |
 
 Google and Outlook sign in with `OAuthSession`, which is shared: Authorization Code with PKCE and a loopback redirect. The listener binds 127.0.0.1 and ::1 only, for the length of the sign-in. Tokens, and Google's client secret, live in the Keychain. No app-owned credentials exist, so nothing needs to be kept secret in the public repository.
+
+### arrangeWindow, clipboard, takeNote
+
+- **`arrangeWindow`** moves the front window, or a named app's, through Accessibility: left, right, top or bottom half, maximise, centre, full screen (and out), minimise, or the same relative place on the other display. Frames are computed in AppKit coordinates within the screen's visible area (menu bar and Dock excluded) and flipped to Accessibility's top-left origin. It never closes or quits anything. "Left" and "right" alone need a window verb ("put", "move", "snap") or the word "window", so "what's on the left" is not a window command.
+- **`clipboard`** says what's on the clipboard (text, file names or "an image"), clears it, or strips its formatting and optionally pastes (⌘V, Accessibility). It never reads out items a password manager marked private (the nspasteboard.org `ConcealedType` / `TransientType`).
+- **`takeNote`** creates a new note in the Notes app: "note that …", "take a note: …", "jot down …". The note's words must have been said. It never edits or deletes existing notes.
 
 ### Routines
 
@@ -644,8 +653,8 @@ Five separate grants, each of which will at some point be missing or revoked. Sh
 | --- | --- | --- |
 | Microphone | All voice input | `...?Privacy_Microphone` |
 | Camera | Gestures only | `...?Privacy_Camera` |
-| Accessibility | In-page navigation, simulated brightness and lock keys | `...?Privacy_Accessibility` |
-| Automation | Spotify, volume, browser tabs, Shortcuts (DND, routines) | `...?Privacy_Automation` |
+| Accessibility | In-page navigation, simulated brightness, lock and paste keys, arranging windows | `...?Privacy_Accessibility` |
+| Automation | Spotify, browser tabs, Shortcuts (DND, routines), Notes (quick notes), System Events (sleep) | `...?Privacy_Automation` |
 | Reminders | Adding reminders by voice | `...?Privacy_Reminders` |
 | Calendars | Reading the calendar (Apple Calendar provider) | `...?Privacy_Calendars` |
 | Notifications | Backup for timers and alarms when the app isn't running | Notifications settings |
@@ -786,6 +795,7 @@ Wake word, endpointing, power profiles, file search and open, `controlSpotify`, 
 - **Clock**: timers, alarms (one-off and repeating), stopwatch, reminders and the time (§9).
 - **Calendar**: read-only, from Apple Calendar, Google Calendar or Outlook (§9).
 - **Natural voice**: Kokoro-82M, on device (§7).
+- **Desktop**: window arrangement, clipboard, quick notes (§9).
 
 Candidates next:
 
@@ -818,7 +828,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 255 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 265 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist

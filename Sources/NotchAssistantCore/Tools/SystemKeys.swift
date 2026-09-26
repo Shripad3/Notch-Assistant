@@ -62,6 +62,16 @@ enum SystemKeys {
     /// function row sends: key code in the top half of data1, then the
     /// key-down (0xA) or key-up (0xB) state.
     @MainActor
+    /// ⌘V into whatever app is in front.
+    static func pasteShortcut() {
+        let source = CGEventSource(stateID: .hidSystemState)
+        for down in [true, false] {
+            let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: down)
+            event?.flags = .maskCommand
+            event?.post(tap: .cghidEventTap)
+        }
+    }
+
     private static func postSystemKey(_ key: Int32) {
         for state in [0xA, 0xB] {
             let event = NSEvent.otherEvent(
