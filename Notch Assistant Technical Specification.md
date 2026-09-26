@@ -414,7 +414,7 @@ AlarmKit does not exist on macOS, so the app rings timers and alarms itself.
 | Tool | Says | Does |
 | --- | --- | --- |
 | `timer` | "set a timer for 10 minutes", "set a pasta timer for an hour and a half", "how long is left", "pause / resume / cancel the timer", "add 5 minutes to the timer", "cancel all timers" | Several timers at once, optionally named |
-| `alarm` | "set an alarm for 7 am", "wake me up tomorrow at 6:30", "set a gym alarm for 6", "what alarms do I have", "cancel my 7 am alarm" | Alarms up to a week ahead; snooze is 9 minutes |
+| `alarm` | "set an alarm for 7 am", "wake me up tomorrow at 6:30", "wake me up at 7 on weekdays", "set a gym alarm for 6 every Monday and Wednesday", "what alarms do I have", "cancel my 7 am alarm" | One-off alarms up to a week ahead, or repeating (every day, weekdays, weekends, named days); snooze is 9 minutes |
 | `stopwatch` | "start / stop / resume / reset the stopwatch", "lap", "how long has the stopwatch been running" | One stopwatch, with laps |
 | `reminder` | "remind me to call Mum at 6", "remind me tomorrow to buy milk", "remind me in 20 minutes to check the oven" | Adds to the Reminders app (EventKit), so it syncs to the phone and alerts even when this app is closed |
 | `currentTime` | "what time is it", "what's the date", "what time is it in Tokyo" | Answers aloud; a place is looked up in the time zone database, then Apple's geocoder |
@@ -423,14 +423,14 @@ AlarmKit does not exist on macOS, so the app rings timers and alarms itself.
 
 - **Durations:** "an hour and a half", "half an hour", "1.5 hours", "twenty five minutes", "quarter of an hour".
 - **Times:** "7 a.m.", "7:30", "seven thirty", "half past 5", "quarter to 8", "noon", "tonight at 8", "Monday at 9", "in 20 minutes".
-- **Hour with no am/pm:** "7" means the next time 7 o'clock comes round: 7 pm if said at 10 am, 7 am if said at 10 pm. With a day ("tomorrow at 7") the hour is taken as said.
+- **Hour with no am/pm:** "7" means the next time 7 o'clock comes round: 7 pm if said at 10 am, 7 am if said at 10 pm. With a day ("tomorrow at 7") or a repeat ("every weekday at 7") the hour is taken as said.
 - **Numbers in the task:** a reminder's other numbers are not mistaken for its time, because "at 6" outranks "for 4".
 
 `DirectMatcher` treats "an hour and a half" and a reminder's "bread and milk" as one command, not two. With the model, a duration or time the user did not say is replaced by one parsed from the transcript (grounding).
 
 **Ringing.** `ClockStore` keeps timers, alarms and the stopwatch in `clock.json` (Application Support), so they survive a quit. It runs one task that sleeps until the next one is due, waking at least once a minute, and no task when nothing is pending. When one is due, the notch shows the Alert state:
 
-- A chime plays, the voice says what rang ("Time's up. Your pasta timer is done."), then the chime repeats.
+- A chime plays (a system sound chosen in Settings → Clock), the voice says what rang ("Time's up. Your pasta timer is done."), then the chime repeats.
 - **Stop:** the Stop button, Escape, or "Alfred, stop" / "okay" / "I'm up".
 - **Snooze** (alarms only): the Snooze button or "Alfred, snooze".
 - **Anything else said over the alarm** silences it and runs as a normal command.
@@ -601,14 +601,15 @@ The tool registry therefore reads settings at session construction, every time.
 
 | Pane | Contents (as built) |
 | --- | --- |
-| Activation | Hotkey (⌥Space, hold to talk); wake word on/off, engine (speech / model), accent, sensitivity; auto-switch power profiles |
+| Activation | Open at login (on by default, so alarms ring); hotkey (⌥Space, hold to talk); wake word on/off, engine (speech / model), accent, sensitivity; auto-switch power profiles |
 | Model & Voice | Apple Intelligence status; voice picker with preview; speak responses (Always / Errors only / Never); duck audio while listening |
 | Capabilities | One toggle per tool, generated from registry metadata; search engine; YouTube autoplay; weather city and attribution |
 | Routines | The user's routines: phrases, numbered steps (reordered with up/down arrows), closing line; on/off per routine; examples to start from |
+| Clock | Alarm and timer sounds (system sounds) with a Test button that rings the notch for real; running timers beside the notch on/off |
 | Files | Scoped roots; undo history; the fixed statement of what the agent cannot do |
 | Spotify | Web API client ID and sign-in |
 | Permissions | Live status per grant, with deep links |
-| Display | Running timers beside the notch on/off; fallback when no notched screen (Hide / Floating / Disable) |
+| Display | Fallback when no notched screen (Hide / Floating / Disable) |
 
 Gesture settings arrive with v4.
 
@@ -760,9 +761,8 @@ Wake word, endpointing, power profiles, file search and open, `controlSpotify`, 
 
 Candidates next:
 
-- **Repeating alarms** ("every weekday at 7") and a choice of alarm sound.
 - **A neural voice** (Kokoro).
-- **Release hygiene:** remove the debug-only main-thread watchdog, make a release build, add launch at login.
+- ~~Release hygiene~~ done: `scripts/build-app.sh` builds release by default (the main-thread watchdog, notch preview and browser probe exist only in `debug` builds), and the app opens at login.
 
 ### v4 — Gestures
 

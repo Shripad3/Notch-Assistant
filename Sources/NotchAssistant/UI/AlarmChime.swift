@@ -18,7 +18,7 @@ final class AlarmChime {
         guard ringing != alert.id else { return }
         stop()
         ringing = alert.id
-        let sound = NSSound(named: alert.kind == .timer ? "Glass" : "Hero")
+        let sound = NSSound(named: AlarmSounds.chosen(for: alert.kind))
         task = Task { [speaker] in
             sound?.play()
             try? await Task.sleep(for: .seconds(1))
@@ -39,4 +39,27 @@ final class AlarmChime {
         task = nil
         speaker.stop()
     }
+}
+
+/// The system sounds offered for timers and alarms.
+enum AlarmSounds {
+    static func key(for kind: Countdown.Kind) -> String {
+        kind == .timer ? "clock.sound.timer" : "clock.sound.alarm"
+    }
+
+    static func defaultSound(for kind: Countdown.Kind) -> String {
+        kind == .timer ? "Glass" : "Hero"
+    }
+
+    static func chosen(for kind: Countdown.Kind) -> String {
+        let name = UserDefaults.standard.string(forKey: key(for: kind)) ?? ""
+        return all.contains(name) ? name : defaultSound(for: kind)
+    }
+
+    /// "Basso", "Glass", "Hero"… from /System/Library/Sounds.
+    static let all: [String] = {
+        let folder = URL(filePath: "/System/Library/Sounds")
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+        return files.map { $0.deletingPathExtension().lastPathComponent }.sorted()
+    }()
 }

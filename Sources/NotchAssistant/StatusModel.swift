@@ -41,6 +41,8 @@ final class StatusModel {
     @ObservationIgnored var onConfirm: ((Bool) -> Void)?
     /// A ringing alert's Snooze (true) or Stop (false) button.
     @ObservationIgnored var onAlert: ((Bool) -> Void)?
+    /// Settings' "Test" buttons for the alarm and timer sounds.
+    @ObservationIgnored var onTestAlert: ((Countdown.Kind) -> Void)?
 
     /// Timers, alarms and the stopwatch, for the menu bar.
     var clock = ClockSnapshot() {

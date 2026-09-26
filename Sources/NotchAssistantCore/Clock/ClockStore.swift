@@ -14,6 +14,8 @@ public struct Countdown: Codable, Sendable, Identifiable, Equatable {
     public var duration: TimeInterval
     /// Set while a timer is paused: the time it had left.
     public var pausedRemaining: TimeInterval?
+    /// A repeating alarm's days, 1 = Sunday … 7 = Saturday.
+    public var repeatDays: Set<Int>?
 
     public var isPaused: Bool { pausedRemaining != nil }
 
@@ -52,11 +54,22 @@ public struct ClockAlert: Sendable, Equatable, Identifiable {
     public let id: UUID
     public let kind: Countdown.Kind
     public let label: String?
-    public let title: String
+    public private(set) var title: String
     /// Said aloud: "Your pasta timer is done."
-    public let message: String
+    public private(set) var message: String
+    /// The Settings "Test" button: nothing to snooze or report as missed.
+    public private(set) var isTest = false
 
-    public var canSnooze: Bool { kind == .alarm }
+    public var canSnooze: Bool { kind == .alarm && !isTest }
+
+    /// How an alarm or timer will ring, from Settings.
+    public static func test(_ kind: Countdown.Kind) -> ClockAlert {
+        var alert = ClockAlert(Countdown(id: UUID(), kind: kind, label: nil, fireDate: Date(), duration: 600))
+        alert.isTest = true
+        alert.title = kind == .alarm ? "Test alarm" : "Test timer"
+        alert.message = kind == .alarm ? "This is how your alarms will sound." : "This is how your timers will sound."
+        return alert
+    }
 
     /// For the debug notch preview.
     public static func preview(_ kind: Countdown.Kind) -> ClockAlert {
@@ -179,8 +192,8 @@ public final class ClockStore: Sendable {
     }
 
     @discardableResult
-    func addAlarm(at date: Date, label: String?) -> Countdown {
-        let alarm = Countdown(id: UUID(), kind: .alarm, label: label, fireDate: date, duration: 0)
+    func addAlarm(at date: Date, label: String?, repeatDays: Set<Int>? = nil) -> Countdown {
+        let alarm = Countdown(id: UUID(), kind: .alarm, label: label, fireDate: date, duration: 0, repeatDays: repeatDays)
         mutate { $0.countdowns.append(alarm) }
         return alarm
     }
@@ -226,6 +239,7 @@ public final class ClockStore: Sendable {
 
     /// Rang and nobody stopped it: leave a notification to find later.
     public func missed(_ alert: ClockAlert) {
+        guard !alert.isTest else { return }
         let notifier = hooks.withLock { $0.notifier }
         notifier?.deliverNow(ClockNotification(id: "missed-\(alert.id)", title: alert.title, body: alert.message, date: Date()))
     }
@@ -265,6 +279,13 @@ public final class ClockStore: Sendable {
         mutate { state in
             due = state.countdowns.filter { !$0.isPaused && $0.fireDate <= now.addingTimeInterval(0.05) }
             state.countdowns.removeAll { item in due.contains { $0.id == item.id } }
+            // A repeating alarm comes back for its next day.
+            for alarm in due {
+                guard let days = alarm.repeatDays, let next = AlarmRepeat.next(after: max(now, alarm.fireDate), at: alarm.fireDate, on: days) else { continue }
+                var again = alarm
+                again.fireDate = next
+                state.countdowns.append(again)
+            }
         }
         let onFire = hooks.withLock { $0.onFire }
         for countdown in due.sorted(by: { $0.fireDate < $1.fireDate }) {
@@ -347,5 +368,73 @@ enum AlertReply: Equatable {
         // ones ("turn off the lights") are new commands.
         guard words.count <= 3, words.contains(where: stops.contains) else { return nil }
         return .stop
+    }
+}
+
+/// Repeating alarms: "every day", "on weekdays", "every Monday and Wednesday".
+public enum AlarmRepeat {
+    static let weekdays = [2, 3, 4, 5, 6]
+    private static let names = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+
+    /// Days (1 = Sunday) and the words that said them.
+    static func find(in words: SpokenWords) -> (days: Set<Int>, consumed: Set<Int>)? {
+        let w = words.lower
+        var days = Set<Int>()
+        var consumed = Set<Int>()
+        for (index, word) in w.enumerated() {
+            switch word {
+            case "daily", "everyday":
+                days.formUnion(1...7); consumed.insert(index)
+            case "day" where index > 0 && w[index - 1] == "every":
+                days.formUnion(1...7); consumed.formUnion([index - 1, index])
+            case "weekdays", "workdays":
+                days.formUnion(weekdays); consumed.insert(index)
+            case "weekday" where index > 0 && ["every", "on"].contains(w[index - 1]):
+                days.formUnion(weekdays); consumed.insert(index)
+            case "weekends":
+                days.formUnion([1, 7]); consumed.insert(index)
+            case "weekend" where index > 0 && ["every", "on", "at"].contains(w[index - 1]):
+                days.formUnion([1, 7]); consumed.insert(index)
+            default:
+                // "every Monday", "on Mondays", "Monday and Wednesday".
+                let singular = word.hasSuffix("s") ? String(word.dropLast()) : word
+                guard let day = names.firstIndex(of: singular) else { continue }
+                let plural = word != singular
+                let every = index > 0 && w[index - 1] == "every"
+                let listed = index > 1 && ["and", "or"].contains(w[index - 1]) && !days.isEmpty
+                guard plural || every || listed || (index > 0 && w[index - 1] == "," ) else { continue }
+                days.insert(day + 1); consumed.insert(index)
+                if listed { consumed.insert(index - 1) }
+            }
+            if consumed.contains(index), index > 0, ["every", "on", "at"].contains(w[index - 1]) { consumed.insert(index - 1) }
+        }
+        return days.isEmpty ? nil : (days, consumed)
+    }
+
+    public static func parse(_ text: String) -> Set<Int>? {
+        find(in: SpokenWords(text))?.days
+    }
+
+    /// The first of `days` after `now`, at `time`'s hour and minute.
+    public static func next(after now: Date, at time: Date, on days: Set<Int>, calendar: Calendar = .current) -> Date? {
+        let clock = calendar.dateComponents([.hour, .minute], from: time)
+        for offset in 0...7 {
+            guard let day = calendar.date(byAdding: .day, value: offset, to: now),
+                  days.contains(calendar.component(.weekday, from: day)),
+                  let date = calendar.date(bySettingHour: clock.hour ?? 0, minute: clock.minute ?? 0, second: 0, of: day),
+                  date > now else { continue }
+            return date
+        }
+        return nil
+    }
+
+    /// "every day", "on weekdays", "at weekends", "every Monday and Wednesday".
+    public static func describe(_ days: Set<Int>) -> String {
+        if days.count == 7 { return "every day" }
+        if days == Set(weekdays) { return "on weekdays" }
+        if days == [1, 7] { return "at weekends" }
+        let ordered = days.sorted { ($0 + 5) % 7 < ($1 + 5) % 7 } // Monday first
+        let named = ordered.map { names[$0 - 1].capitalized }
+        return "every " + (named.count > 1 ? named.dropLast().joined(separator: ", ") + " and " + named.last! : named[0])
     }
 }

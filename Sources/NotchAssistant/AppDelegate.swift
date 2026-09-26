@@ -76,6 +76,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         status.onSelect = { id in Task { await coordinator.select(id) } }
         status.onConfirm = { confirmed in Task { await coordinator.resolveConfirmation(confirmed) } }
         status.onAlert = { snooze in Task { await coordinator.resolveAlert(snooze: snooze) } }
+        status.onTestAlert = { kind in Task { await coordinator.ring(.test(kind)) } }
+        LoginItem.enableOnFirstLaunch()
         ClockStore.shared.start(
             notifier: clockNotifier,
             onChange: { [status] snapshot in

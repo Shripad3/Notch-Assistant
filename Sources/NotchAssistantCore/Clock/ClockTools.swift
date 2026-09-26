@@ -210,6 +210,8 @@ struct AlarmArguments: Sendable {
     var time: String?
     @Guide(description: "The alarm's name, only if the user gave one, e.g. \"gym\"")
     var label: String?
+    @Guide(description: "Only if the alarm repeats, as the user said it, e.g. \"every weekday\"")
+    var repeats: String?
 }
 
 /// Alarms at a time of day. They ring like timers, and can be snoozed.
@@ -241,6 +243,17 @@ struct AlarmTool: AssistantTool {
             guard let when = when(arguments.time, now: now), when.hasTime else {
                 throw ToolError("For what time? Say “set an alarm for 7 am”")
             }
+            if let days = repeatDays(arguments.repeats) {
+                // "every weekday at 7" is 7 am unless said otherwise: read
+                // the hour as said, as with "tomorrow at 7".
+                let source = ClockPhrases.grounded(arguments.time) ?? CommandContext.transcript
+                let clock = source.flatMap { SpokenWhen.parse("tomorrow " + $0, now: now)?.date } ?? when.date
+                guard let first = AlarmRepeat.next(after: now, at: clock, on: days) else { throw ToolError("I couldn't work out when that alarm rings") }
+                let alarm = store.addAlarm(at: first, label: label, repeatDays: days)
+                let time = first.formatted(date: .omitted, time: .shortened)
+                let name = alarm.label.map { " (\($0))" } ?? ""
+                return ToolResult("Alarm set for \(time) \(AlarmRepeat.describe(days))\(name)")
+            }
             guard when.date > now, when.date.timeIntervalSince(now) <= ClockStore.limit else {
                 throw ToolError("Alarms can be set for up to a week ahead")
             }
@@ -263,8 +276,11 @@ struct AlarmTool: AssistantTool {
                 : "Cancelled \(chosen.count) alarms")
         default:
             guard !alarms.isEmpty else { return ToolResult("You don't have any alarms", isAnswer: true) }
-            let list = alarms.sorted { $0.fireDate < $1.fireDate }
-                .map { ClockFormat.when($0.fireDate, now: now) + ($0.label.map { " for \($0)" } ?? "") }
+            let list = alarms.sorted { $0.fireDate < $1.fireDate }.map { alarm in
+                let when = alarm.repeatDays.map { "\(alarm.fireDate.formatted(date: .omitted, time: .shortened)) \(AlarmRepeat.describe($0))" }
+                    ?? ClockFormat.when(alarm.fireDate, now: now)
+                return when + (alarm.label.map { " for \($0)" } ?? "")
+            }
             return ToolResult(list.count == 1 ? "You have an alarm \(Self.at(list[0]))" : "You have \(list.count) alarms: " + list.joined(separator: ", "), isAnswer: true)
         }
     }
@@ -272,6 +288,12 @@ struct AlarmTool: AssistantTool {
     /// "at 7:00 AM", "tomorrow at 7:00 AM".
     private static func at(_ when: String) -> String {
         when.first?.isNumber == true ? "at \(when)" : when
+    }
+
+    /// The model's repeat if the user said it, else one in what they said.
+    private func repeatDays(_ spoken: String?) -> Set<Int>? {
+        if let spoken = ClockPhrases.grounded(spoken), let days = AlarmRepeat.parse(spoken) { return days }
+        return CommandContext.transcript.flatMap(AlarmRepeat.parse)
     }
 
     private func when(_ spoken: String?, now: Date) -> SpokenWhen? {
@@ -287,9 +309,16 @@ struct AlarmTool: AssistantTool {
         let wake = command.text.hasPrefix("wake me")
         guard words.containsAny(["alarm", "alarms"]) || wake,
               !words.containsAny(["timer", "timers", "stopwatch", "remind", "reminder"]) else { return nil }
-        let when = SpokenWhen.find(in: words, now: Date(), calendar: .current)
-        let taken = when?.consumed ?? []
-        let time = when.map { words.text($0.consumed) }
+        // "every Monday at 7": the days repeat, so only the time is parsed.
+        let repeating = AlarmRepeat.find(in: words)
+        let consumed: Set<Int>?
+        if let repeating {
+            consumed = SpokenWhen.time(in: words, from: 0, excluding: repeating.consumed)?.consumed
+        } else {
+            consumed = SpokenWhen.find(in: words, now: Date(), calendar: .current)?.consumed
+        }
+        let taken = (consumed ?? []).union(repeating?.consumed ?? [])
+        let time = consumed.map { words.text($0) }
         var label = ClockPhrases.label(in: words, noun: "alarm", skipping: taken)
         if words.containsAny(["all", "every"]) { label = "all" }
 
@@ -301,7 +330,7 @@ struct AlarmTool: AssistantTool {
         } else {
             action = "set"
         }
-        return AlarmArguments(action: action, time: time, label: label)
+        return AlarmArguments(action: action, time: time, label: label, repeats: repeating.map { words.text($0.consumed) })
     }
 }
 

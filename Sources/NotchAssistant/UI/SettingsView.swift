@@ -1,11 +1,12 @@
 import AppKit
 import NotchAssistantCore
 import Speech
+import ServiceManagement
 import SwiftUI
 
 /// The panes, in sidebar order.
 private enum SettingsPane: String, CaseIterable, Identifiable {
-    case activation, model, capabilities, routines, files, spotify, permissions, display
+    case activation, model, capabilities, routines, clock, files, spotify, permissions, display
 
     var id: Self { self }
 
@@ -15,6 +16,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .model: "Model & Voice"
         case .capabilities: "Capabilities"
         case .routines: "Routines"
+        case .clock: "Clock"
         case .files: "Files"
         case .spotify: "Spotify"
         case .permissions: "Permissions"
@@ -28,6 +30,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .model: "cpu"
         case .capabilities: "square.grid.2x2"
         case .routines: "list.bullet.rectangle"
+        case .clock: "alarm"
         case .files: "folder"
         case .spotify: "music.note"
         case .permissions: "lock.shield"
@@ -63,6 +66,7 @@ struct SettingsView: View {
         case .model: ModelPane()
         case .capabilities: CapabilitiesPane()
         case .routines: RoutinesPane()
+        case .clock: ClockPane(status: status)
         case .files: FilesPane()
         case .spotify: SpotifyPane()
         case .permissions: PermissionsPane()
@@ -82,9 +86,29 @@ private struct ActivationPane: View {
     @AppStorage(SpeechWakeListener.localeKey) private var accent = ""
     @State private var models: [String] = []
     @State private var accents: [Locale] = []
+    @State private var openAtLogin = LoginItem.isEnabled || LoginItem.needsApproval
+    @State private var loginNeedsApproval = LoginItem.needsApproval
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Open at login", isOn: $openAtLogin)
+                    .onChange(of: openAtLogin) { _, enabled in
+                        LoginItem.set(enabled)
+                        loginNeedsApproval = LoginItem.needsApproval
+                    }
+                if loginNeedsApproval {
+                    HStack {
+                        Text("Allow Notch Assistant in Login Items to finish.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Open Login Items…") { SMAppService.openSystemSettingsLoginItems() }
+                            .controlSize(.small)
+                    }
+                }
+            } footer: {
+                Text("Timers and alarms only ring while Notch Assistant is running.")
+            }
             Section {
                 LabeledContent("Hold to talk", value: "⌥ Space")
             } footer: {
@@ -529,15 +553,9 @@ private struct PermissionsPane: View {
 
 private struct DisplayPane: View {
     @AppStorage(DisplayFallback.defaultsKey) private var fallback = DisplayFallback.hide.rawValue
-    @AppStorage(StatusModel.notchCountdownKey) private var notchCountdown = true
 
     var body: some View {
         Form {
-            Section {
-                Toggle("Show running timers beside the notch", isOn: $notchCountdown)
-            } footer: {
-                Text("A small countdown sits next to the notch while a timer or the stopwatch runs. Hover over it to see every timer.")
-            }
             Section {
                 Picker("When there's no notched display", selection: $fallback) {
                     ForEach(DisplayFallback.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
@@ -548,5 +566,46 @@ private struct DisplayPane: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+private struct ClockPane: View {
+    let status: StatusModel
+    @AppStorage(AlarmSounds.key(for: .alarm)) private var alarmSound = AlarmSounds.defaultSound(for: .alarm)
+    @AppStorage(AlarmSounds.key(for: .timer)) private var timerSound = AlarmSounds.defaultSound(for: .timer)
+    @AppStorage(StatusModel.notchCountdownKey) private var notchCountdown = true
+
+    var body: some View {
+        Form {
+            Section {
+                soundPicker("Alarm sound", selection: $alarmSound, kind: .alarm)
+                soundPicker("Timer sound", selection: $timerSound, kind: .timer)
+            } footer: {
+                Text("“Test” rings the notch exactly as a real one would: sound, voice and the Stop button.")
+            }
+            Section {
+                Toggle("Show running timers beside the notch", isOn: $notchCountdown)
+            } footer: {
+                Text("A small countdown sits next to the notch while a timer or the stopwatch runs. Hover over it to see every timer. The menu bar always shows it.")
+            }
+            Section("What you can say") {
+                Text("“Set a timer for 10 minutes” · “Set a pasta timer for an hour and a half” · “How long is left?”")
+                Text("“Wake me up at 7 on weekdays” · “Set an alarm for 6:30 tomorrow” · “What alarms do I have?”")
+                Text("“Start the stopwatch” · “Lap” · “Remind me to call Mum at 6” · “What time is it in Tokyo?”")
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        .formStyle(.grouped)
+    }
+
+    private func soundPicker(_ title: String, selection: Binding<String>, kind: Countdown.Kind) -> some View {
+        HStack {
+            Picker(title, selection: selection) {
+                ForEach(AlarmSounds.all, id: \.self) { Text($0).tag($0) }
+            }
+            .onChange(of: selection.wrappedValue) { _, name in NSSound(named: name)?.play() }
+            Button("Test") { status.onTestAlert?(kind) }
+        }
     }
 }

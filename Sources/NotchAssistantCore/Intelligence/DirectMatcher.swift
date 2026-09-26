@@ -71,6 +71,10 @@ enum DirectMatcher {
         // "1 hour and 30 minutes".
         padded = padded.replacingOccurrences(
             of: #" (hours?|minutes?) and (\w+ ){1,2}(minutes?|seconds?) "#, with: " $1 $3 ", options: .regularExpression)
+        // "every Monday and Wednesday".
+        padded = padded.replacingOccurrences(
+            of: #" ((mon|tues|wednes|thurs|fri|satur|sun)days?) and (?=(mon|tues|wednes|thurs|fri|satur|sun)days?\b)"#,
+            with: " $1 ", options: .regularExpression)
         return padded.contains(" and ") || padded.contains(" then ")
     }
 }

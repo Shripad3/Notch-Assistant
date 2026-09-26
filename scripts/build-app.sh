@@ -9,11 +9,12 @@
 # Microphone and Speech Recognition grants across rebuilds; an ad-hoc
 # signature changes every build and macOS asks again each time.
 #
-# Usage: scripts/build-app.sh [debug|release]
+# Usage: scripts/build-app.sh [release|debug]   (release by default; debug adds
+# the main-thread watchdog and the notch preview)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-config="${1:-debug}"
+config="${1:-release}"
 swift build -c "$config" --product NotchAssistant
 bin="$(swift build -c "$config" --show-bin-path)/NotchAssistant"
 

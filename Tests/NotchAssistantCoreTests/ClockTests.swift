@@ -325,3 +325,66 @@ struct AlertStateTests {
         #expect(StateMachine.transition(from: .alert(alert), on: .cancel) == .idle)
     }
 }
+
+struct RepeatingAlarmTests {
+    @Test(arguments: [
+        ("set an alarm for 7 every day", Set(1...7)),
+        ("wake me up at 6:30 on weekdays", Set([2, 3, 4, 5, 6])),
+        ("alarm at 9 every weekend", Set([1, 7])),
+        ("set an alarm for 7 every Monday and Wednesday", Set([2, 4])),
+        ("set an alarm for 8 on Fridays", Set([6])),
+    ])
+    func parsesDays(said: String, days: Set<Int>) throws {
+        #expect(AlarmRepeat.parse(said) == days)
+        let args = try #require(DirectCommand(said).flatMap { AlarmTool().directArguments(for: $0) })
+        #expect(args.action == "set")
+        #expect(args.repeats != nil)
+        #expect(args.time != nil)
+    }
+
+    @Test func oneOffDaysDontRepeat() {
+        #expect(AlarmRepeat.parse("set an alarm for Monday at 7") == nil)
+    }
+
+    @Test func describesDays() {
+        #expect(AlarmRepeat.describe(Set(1...7)) == "every day")
+        #expect(AlarmRepeat.describe([2, 3, 4, 5, 6]) == "on weekdays")
+        #expect(AlarmRepeat.describe([2, 4]) == "every Monday and Wednesday")
+        #expect(AlarmRepeat.describe([1, 2]) == "every Monday and Sunday")
+    }
+
+    @Test func nextSkipsOtherDays() throws {
+        let calendar = SpokenWhenTests.calendar
+        let saturday10 = SpokenWhenTests.now
+        let time = SpokenWhenTests.date(day: 26, 7)
+        let next = try #require(AlarmRepeat.next(after: saturday10, at: time, on: [2, 3, 4, 5, 6], calendar: calendar))
+        #expect(next == SpokenWhenTests.date(day: 28, 7)) // Monday
+    }
+
+    @Test func repeatingAlarmComesBack() {
+        let store = ClockStore(file: nil)
+        store.start(notifier: nil, onChange: { _ in }, onFire: { _ in })
+        let past = Date().addingTimeInterval(-1)
+        store.addAlarm(at: past, label: nil, repeatDays: Set(1...7))
+        store.fireDue()
+        let alarms = store.snapshot.alarms
+        #expect(alarms.count == 1)
+        #expect(alarms.first.map { $0.fireDate > Date() } == true)
+    }
+
+    @Test func weekdayAlarmIsInTheMorning() async throws {
+        let store = ClockStore(file: nil)
+        let tool = AlarmTool(store: store)
+        let said = "wake me up at 7 every weekday"
+        let args = try #require(DirectCommand(said).flatMap { tool.directArguments(for: $0) })
+        let result = try await CommandContext.$transcript.withValue(said) { try await tool.execute(args) }
+        #expect(result.text.contains("on weekdays"))
+        let hour = Calendar.current.component(.hour, from: try #require(store.snapshot.alarms.first).fireDate)
+        #expect(hour == 7)
+    }
+
+    @Test func compoundCheckAllowsListedDays() {
+        #expect(!DirectMatcher.isCompound("set an alarm for 7 every monday and wednesday"))
+        #expect(DirectMatcher.isCompound("set an alarm for 7 and open spotify"))
+    }
+}
