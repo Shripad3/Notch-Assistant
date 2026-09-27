@@ -40,6 +40,8 @@ public struct FoundationModelsEngine: AssistantEngine {
         }
 
         let tools = ToolRouter.relevant(for: transcript, among: tools)
+        // Nothing here is about a tool: it's conversation.
+        if tools.isEmpty, Conversation.isEnabled { return Plan(steps: [], chat: transcript) }
         Log.intelligence.notice("model sees: \(tools.map(\.name).joined(separator: ", "), privacy: .public)")
         let schema = try PlanSchema.make(for: tools)
         let content: GeneratedContent
@@ -57,7 +59,17 @@ public struct FoundationModelsEngine: AssistantEngine {
             throw Self.failure(for: error)
         }
         Log.intelligence.notice("plan for \"\(transcript, privacy: .public)\": \(content.jsonString, privacy: .public)")
-        return try PlanSchema.decode(content, tools: tools, transcript: transcript)
+        let plan = try PlanSchema.decode(content, tools: tools, transcript: transcript)
+        return plan.chat != nil && !Conversation.isEnabled ? Plan(steps: []) : plan
+    }
+
+    public func plan(for transcript: String, tools: [AnyAssistantTool], conversing: Bool) async throws -> Plan {
+        guard conversing else { return try await plan(for: transcript, tools: tools) }
+        if let reason = unavailableReason() { throw reason }
+        let transcript = Self.clean(transcript)
+        if let routine = Routines.match(transcript) { return Routines.plan(for: routine, tools: tools) }
+        if let plan = DirectMatcher.plan(for: transcript, tools: tools) { return plan }
+        return Plan(steps: [], chat: transcript)
     }
 
     /// Punctuation around the command changes the model's choice: "Open

@@ -29,6 +29,8 @@ public struct Plan: Sendable {
     public var isDirect = false
     /// A text-only answer, with no steps (`SmallTalk`).
     public var reply: String?
+    /// The user is talking, not commanding: answer conversationally.
+    public var chat: String?
     /// A routine: every step runs even if one fails, and the routine's
     /// closing line (or a summary) is spoken at the end.
     public var routine: RoutineRun?
@@ -62,6 +64,11 @@ public enum PlanSchema {
             name: "Plan",
             properties: [
                 .init(
+                    name: "justTalking",
+                    description: "True when the user is chatting, sharing how they feel, or asking a general question no tool acts on",
+                    schema: DynamicGenerationSchema(type: Bool.self)
+                ),
+                .init(
                     name: "steps",
                     description: "Actions in the order they should run. Empty if no tool fits.",
                     schema: DynamicGenerationSchema(
@@ -76,6 +83,9 @@ public enum PlanSchema {
     }
 
     public static func decode(_ content: GeneratedContent, tools: [AnyAssistantTool], transcript: String) throws -> Plan {
+        if (try? content.value(Bool.self, forProperty: "justTalking")) == true {
+            return Plan(steps: [], chat: transcript)
+        }
         let steps = try content.value([GeneratedContent].self, forProperty: "steps")
         return Plan(steps: try steps.map { step in
             let name = try step.value(String.self, forProperty: "tool")

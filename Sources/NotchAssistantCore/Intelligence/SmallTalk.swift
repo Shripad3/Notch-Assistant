@@ -29,9 +29,6 @@ enum SmallTalk {
         for sendIt in ["send it", "send", "send it now", "send that", "send the message", "send the email"] {
             table[sendIt] = "There's nothing waiting to be sent."
         }
-        for question in ["how are you", "how are you doing", "how s it going", "how are things", "you ok", "are you ok"] {
-            table[question] = "All running smoothly. What can I do for you?"
-        }
         for thanks in ["thanks", "thank you", "thanks a lot", "thank you so much", "cheers", "much appreciated"] {
             table[thanks] = "You're welcome."
         }
@@ -39,7 +36,7 @@ enum SmallTalk {
             table[identity] = "I'm Alfred, the assistant in your notch."
         }
         for help in ["what can you do", "help", "what can i ask you", "what do you do"] {
-            table[help] = "I can open apps, websites and files, search the web and YouTube, control Spotify, and change the volume."
+            table[help] = "Quite a lot: apps, websites and files; music; timers, alarms and reminders; your calendar; calls, texts and email; notes, dictation and meeting transcripts; the weather; or just a chat."
         }
         return table
     }()

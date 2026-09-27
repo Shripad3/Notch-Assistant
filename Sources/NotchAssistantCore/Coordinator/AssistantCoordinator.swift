@@ -27,6 +27,10 @@ public actor AssistantCoordinator {
     /// Alerts that came due while the notch was busy; shown once it's idle.
     private var queuedAlerts: [ClockAlert] = []
     private let clock: ClockStore
+    private let conversation: Conversation
+    /// In a conversation: after a reply, Alfred listens again without the
+    /// wake word.
+    private var conversing = false
     /// The command a question was asked about ("add lunch with Sam"): the
     /// answer ("tomorrow at 1") is added to it.
     private var followUpCommand: String?
@@ -41,9 +45,11 @@ public actor AssistantCoordinator {
         engine: any AssistantEngine,
         registry: ToolRegistry,
         presenter: any NotchPresenter,
-        clock: ClockStore = .shared
+        clock: ClockStore = .shared,
+        conversation: Conversation = .shared
     ) {
         self.clock = clock
+        self.conversation = conversation
         self.transcription = transcription
         self.engine = engine
         self.registry = registry
@@ -75,6 +81,7 @@ public actor AssistantCoordinator {
         interruptedAlert = nil
         switch state {
         case .confirm, .question: answering = true
+        case .reply where conversing: answering = true
         case .alert(let alert):
             answering = true
             interruptedAlert = alert
@@ -182,7 +189,9 @@ public actor AssistantCoordinator {
             await apply(.silence, session: id)
             return
         }
-        if let wake, wake.confirmed {
+        if let wake, wake.isFollowUp {
+            // An answer to Alfred: nothing to strip.
+        } else if let wake, wake.confirmed {
             // The speech detector already transcribed "Alfred"; this second
             // recognizer often mishears it ("I said…", "Hi friend…"), which
             // rejected real commands. Only tidy the transcript.
@@ -249,8 +258,22 @@ public actor AssistantCoordinator {
             }
         }
 
+        if conversing, Conversation.isGoodbye(transcript) {
+            await apply(.textOnly("Anytime."), session: id)
+            return
+        }
+
         do {
-            let plan = try await engine.plan(for: transcript, tools: registry.enabledTools())
+            let plan = try await engine.plan(for: transcript, tools: registry.enabledTools(), conversing: conversing)
+            if let chat = plan.chat {
+                let reply = try await conversation.reply(to: chat)
+                conversing = true
+                await apply(.textOnly(reply), session: id)
+                await presenter.finishedSpeaking()
+                guard id == session, case .reply = state else { return }
+                await activationBegan(wake: .followUp())
+                return
+            }
             if plan.steps.isEmpty, let reply = plan.reply {
                 await apply(.textOnly(reply), session: id)
                 return
@@ -354,6 +377,12 @@ public actor AssistantCoordinator {
         }
         scheduleDismissal(after: next, session: id)
         await presenter.render(next)
+        // Back to idle: any conversation is over; remember it.
+        if next == .idle, conversing {
+            conversing = false
+            let conversation = conversation
+            Task { await conversation.end() }
+        }
         if next == .idle, !queuedAlerts.isEmpty {
             await ring(queuedAlerts.removeFirst())
         }

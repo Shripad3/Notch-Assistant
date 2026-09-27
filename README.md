@@ -18,7 +18,10 @@ The design, and every place the build departs from it, is in [Notch Assistant Te
 | Files | "open my latest screenshot", "rename test txt to notes", "move … to Documents", "undo that". Metadata only; nothing is ever read or permanently deleted |
 | Weather | "how's the weather", "will it rain tomorrow in Paris" |
 | Clock | "set a timer for 10 minutes", "wake me up at 7 on weekdays", "start the stopwatch", "remind me to call Mum at 6", "what time is it in Tokyo" |
-| Calendar | "what's on my calendar tomorrow", "when's my next meeting", "am I free at 3". Apple Calendar, Google or Outlook, read-only |
+| Calendar and tasks | "what's on my calendar tomorrow", "add lunch with Sam tomorrow at 1", "move my dentist appointment to Friday", "cancel my 3 o'clock"; "add milk to my to-do list", "mark it as done". Apple Calendar or Google (Outlook read-only); Apple Reminders or Google Tasks |
+| Calls, texts, email | "call Amma", "FaceTime Sam", "tell Aditya I'm running late", "WhatsApp Mum …", "email Prof. Jansen that …". People come from Contacts; nothing is sent without a "yes" |
+| Transcripts and dictation | "start transcribing" a meeting or call, "summarise the meeting"; "dictate" into any text field or "take dictation" into Notes |
+| Conversation | "I had a long day at work": Alfred talks back, and remembers (locally, deletable) if you let it |
 | Windows | "put Safari on the left half", "full screen", "move this to the other display" |
 | Clipboard and notes | "what's on my clipboard", "paste as plain text", "note that the Wi-Fi password is on the router" |
 | Routines | Your own phrases that run several steps: "I'm home" → lights (via Shortcuts), a playlist, VS Code |
@@ -51,15 +54,16 @@ scripts/build-app.sh debug      # adds a main-thread stall detector and a notch 
 All of these use your own free credentials. The repository contains none.
 
 - **Spotify song and playlist names:** create an app at developer.spotify.com, then follow Settings › Spotify.
-- **Google Calendar or Outlook:** create an OAuth client or app registration and follow Settings › Calendar. Apple Calendar needs nothing, and also covers Google and Exchange accounts added in System Settings › Internet Accounts.
+- **Google Calendar, Tasks and Gmail sending, or Outlook:** create an OAuth client or app registration and follow Settings › Calendar. Apple Calendar needs nothing, and also covers Google and Exchange accounts added in System Settings › Internet Accounts.
 - **Apple WeatherKit:** place a macOS provisioning profile with the WeatherKit capability at `Resources/NotchAssistant.provisionprofile` (git-ignored). Without it, weather comes from Open-Meteo.
 - **Natural voice:** pick a Kokoro voice in Settings › Model & Voice. It downloads once, about 80 MB.
 
 ## Test
 
 ```sh
-swift test                                                # about 270 tests; no microphone or model needed
+swift test                                                # about 325 tests; no microphone or model needed
 swift run plan-cli "open spotify" "set a timer for 10 minutes"   # see the plan for a command; executes nothing
+swift run plan-cli --chat "I had a long day" "any tips?"         # a conversation with Alfred in the terminal
 log stream --level info --predicate 'subsystem == "dev.shripad.NotchAssistant"'
 ```
 
@@ -75,6 +79,8 @@ log stream --level info --predicate 'subsystem == "dev.shripad.NotchAssistant"'
 - **Requests:** everything is understood and acted on locally.
 - **What goes online:** the weather's place name, web searches you ask for, and your own Spotify or calendar accounts when connected.
 - **Credentials:** tokens and secrets are stored in the Keychain.
+- **Memory:** conversation memories are short notes stored only on the Mac, and can be deleted in Settings.
+- **Recordings:** they only ever start when asked, with a red dot in the notch throughout, and stay in Documents.
 - **Camera:** used only while hand gestures are on. Nothing is recorded.
 
 ## Credits

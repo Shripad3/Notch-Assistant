@@ -387,6 +387,7 @@ Every tool conforms to `AssistantTool`: a name, a description the model reads, a
 | `email` | `person`, `subject?`, `body`, `account` | Yes | Contacts | n/a — draft; Gmail send confirmed | after v3 |
 | `transcribe` | `action` | No | Microphone (+ Screen & System Audio Recording for calls) | n/a | after v3 |
 | `dictate` | `target` | No | Accessibility (typing) or Automation (Notes) | n/a | after v3 |
+| `memory` | `action` | No | None | Forget-all confirmed | after v3 |
 | `currentTime` | `what`, `place?` | Only for a place | None | n/a | after v3 |
 | `calendar` | `action`, `when?` | Google/Outlook only | Calendar | n/a — read-only | after v3 |
 | `calendarEvent` | `action`, `title?`, `when?`, `newWhen?`, `duration?` | Google only | Calendar | Undo for add and move; delete confirmed | after v3 |
@@ -537,6 +538,31 @@ Adds, moves and deletes events in Apple Calendar or Google. Outlook stays read-o
 - **Subject:** from "about …", else the first sentence.
 
 A lone "send it" with nothing pending replies that nothing is waiting.
+
+### Conversation and memory
+
+**Routing.**
+- **Commands first:** routines and direct phrasings still win.
+- **Otherwise conversation**, when:
+  - no tool's keywords appear (the router has nothing to offer), or
+  - the model sets the plan's `justTalking` flag. This field comes before `steps`: "I had a long day at work" contains "day" (a clock keyword), and the flag lets the model say it's talk, not a tool call.
+- **Canned replies:** greetings, thanks, identity and help keep their fixed lines; "how are you" became conversation.
+
+**`Conversation`.**
+- **Session:** one `LanguageModelSession` per conversation, so it keeps context, with a persona: Alfred as a calm, warm, dryly witty butler.
+- **Replies:** spoken, one to three sentences, empathy before advice.
+- **Honesty and limits:** it's honest that it has no internet; it doesn't claim to act; it points to professionals and emergency services where needed.
+- **Speed:** about 1.5–2 s per reply on the M4 Air.
+- **Follow-up:** after a reply is spoken, the coordinator listens again without the wake word (6 s patience). The answer is kept exactly as said: a follow-up isn't trimmed like a command.
+- **Mid-conversation:** a command runs and ends the conversation. "That's all", "bye" or silence ends it too, and so does anything that returns the notch to idle.
+
+**`MemoryStore`** (on by default, Settings › Conversation):
+- **What's kept:** when a conversation ends, the model writes a one-sentence summary and up to three facts (`ConversationMemory`), stored in Application Support as JSON with on-device sentence embeddings (NaturalLanguage).
+- **What's recalled:** at the start of a conversation, the most similar memories plus the latest summary are added to the instructions, at most about 1,200 characters, because the context is small.
+- **Size:** about a few hundred bytes per conversation, capped at 500 items.
+- **Control:** every item can be seen and deleted in Settings. "What do you remember about me?", "forget that" (the latest conversation) and "forget everything" (after "yes") work by voice.
+
+`plan-cli --chat "…" "…"` holds a conversation from the terminal without touching the stored memory.
 
 ### Transcription and dictation (`LiveCapture`)
 
@@ -743,6 +769,9 @@ The tool registry therefore reads settings at session construction, every time.
 | Pane | Contents (as built) |
 | --- | --- |
 | Activation | Open at login (on by default, so alarms ring); hand gestures on/off with status; hotkey (⌥Space, hold to talk); wake word on/off, engine (speech / model), accent, sensitivity; auto-switch power profiles |
+| Conversation | Talk with Alfred on/off; memory on/off; every remembered item with delete; forget everything |
+| Messages & Email | Contacts access; texts via Messages or WhatsApp; emails open in Gmail or Outlook |
+| Recording | Keep audio; include the other side of calls; transcripts folder; stop listening during calls |
 | Model & Voice | Apple Intelligence status; voice picker (Kokoro natural voices and system voices) with preview and the Kokoro download; speak responses (Always / Errors only / Never); duck audio while listening |
 | Capabilities | One toggle per tool, generated from registry metadata; search engine; YouTube autoplay; weather city and attribution |
 | Routines | The user's routines: phrases, numbered steps (reordered with up/down arrows), closing line; on/off per routine; examples to start from |
@@ -932,7 +961,7 @@ Four features, built in this order. The decisions are the owner's.
 - **Dictation:** into Notes or the focused text field, with spoken punctuation and "new line" / "go to a new line".
 - **Calls:** recording only ever starts when asked. While another app uses the microphone (a call), Alfred stops listening entirely; recording a call starts from ⌥Space or the menu bar.
 
-**4. Conversation.**
+**4. Conversation.** *Built 27 Sep 2026 (§9: Conversation and memory).*
 - **How it talks:** spoken chat with the on-device model, replies spoken sentence by sentence, and a follow-up window with no wake word needed.
 - **Memory:** opt-in memory across conversations, kept as short local summaries and facts. The most relevant ones are given to the model each time. It can be seen and deleted in Settings, and "forget that" works.
 
@@ -969,7 +998,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 315 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 325 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist

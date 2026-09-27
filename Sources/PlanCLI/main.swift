@@ -26,6 +26,17 @@ if CommandLine.arguments.dropFirst().first == "--tokens", #available(macOS 26.4,
     exit(0)
 }
 
+// plan-cli --chat "…" "…": one conversation, Alfred's replies printed.
+if CommandLine.arguments.dropFirst().first == "--chat" {
+    let conversation = Conversation.scratch()
+    for line in CommandLine.arguments.dropFirst(2) {
+        let start = Date()
+        let reply = try await conversation.reply(to: line)
+        print("you:    \(line)\nalfred: \(reply)  (\(String(format: "%.1f", Date().timeIntervalSince(start))) s)")
+    }
+    exit(0)
+}
+
 var transcripts = Array(CommandLine.arguments.dropFirst())
 if transcripts == ["-"] {
     transcripts = []
@@ -52,7 +63,13 @@ for transcript in transcripts {
     do {
         let plan = try await engine.plan(for: transcript, tools: tools)
         let elapsed = started.duration(to: .now)
-        if plan.steps.isEmpty { print("  → (no steps)") }
+        if let chat = plan.chat {
+            print("  → conversation: “\(chat)”")
+        } else if let reply = plan.reply {
+            print("  → reply: \(reply)")
+        } else if plan.steps.isEmpty {
+            print("  → (no steps)")
+        }
         if plan.isDirect { print("  (direct match, model skipped)") }
         for step in plan.steps {
             print("  → \(step.tool.name) \(step.arguments.jsonString)")

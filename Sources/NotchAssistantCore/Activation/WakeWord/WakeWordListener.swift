@@ -17,6 +17,9 @@ public final class WakeContext: @unchecked Sendable, Equatable {
     public let confirmed: Bool
     /// Seconds to wait for speech to start (see `Endpointer`).
     public private(set) var patience = Endpointer.noSpeechTimeout
+    /// An answer to Alfred (a question or a conversation), not a command
+    /// after the wake word: kept exactly as said.
+    public private(set) var isFollowUp = false
 
     /// A hands-free start with no wake word (an open-palm gesture): no
     /// pre-roll, and the endpointer measures the room itself.
@@ -28,6 +31,7 @@ public final class WakeContext: @unchecked Sendable, Equatable {
     public static func followUp() -> WakeContext {
         let context = WakeContext(preroll: [], ambientFloor: .nan, score: 1, confirmed: true)
         context.patience = 6
+        context.isFollowUp = true
         return context
     }
 

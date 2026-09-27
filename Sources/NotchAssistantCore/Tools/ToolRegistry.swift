@@ -25,6 +25,7 @@ public struct ToolRegistry: Sendable {
         AnyAssistantTool(EmailTool()),
         AnyAssistantTool(TranscribeTool()),
         AnyAssistantTool(DictationTool()),
+        AnyAssistantTool(MemoryTool()),
         AnyAssistantTool(CurrentTimeTool()),
         AnyAssistantTool(CalendarTool()),
         AnyAssistantTool(OpenAppTool()),

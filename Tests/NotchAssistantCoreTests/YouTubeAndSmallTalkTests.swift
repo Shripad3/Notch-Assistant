@@ -53,9 +53,15 @@ struct YouTubeRoutingTests {
 }
 
 struct SmallTalkTests {
-    @Test(arguments: ["Hi how are you", "hello", "Good morning Alfred", "thanks", "What can you do?", "Alfred"])
+    @Test(arguments: ["hello", "Good morning Alfred", "thanks", "What can you do?", "Alfred"])
     func answered(transcript: String) {
         #expect(SmallTalk.reply(to: transcript) != nil)
+    }
+
+    /// Conversation answers these now, not a fixed line.
+    @Test(arguments: ["Hi how are you", "how are you doing"])
+    func leftToConversation(transcript: String) {
+        #expect(SmallTalk.reply(to: transcript) == nil)
     }
 
     @Test(arguments: ["open spotify", "hi open spotify", "thanks open youtube", "good morning playlist"])
