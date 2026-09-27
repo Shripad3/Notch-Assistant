@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import FoundationModels
 
 /// Shared by calling, texting and emailing.
@@ -124,7 +125,10 @@ struct CallTool: AssistantTool {
         let how = arguments.via == "facetime" ? "FaceTime" : arguments.via == "facetimeAudio" ? "FaceTime audio" : "Call"
         let token = PendingActions.park {
             _ = await MainActor.run { NSWorkspace.shared.open(url) }
-            return "\(how == "Call" ? "Calling" : how + " to") \(person.name)"
+            // macOS asks once more before a call from a link; the user has
+            // already said yes to Alfred, so press its Call button.
+            let pressed = await CallPrompt.pressCall()
+            return "\(how == "Call" ? "Calling" : how + " to") \(person.name)" + (pressed ? "" : ". Click Call in FaceTime")
         }
         let item = ResultItem(id: token, title: person.name, detail: "\(handle.label) · \(handle.value)", symbol: "phone.fill")
         return ToolResult("\(how) \(person.name)?", items: [item], confirmation: token)
@@ -390,5 +394,63 @@ struct EmailTool: AssistantTool {
         let (person, body) = Recipients.split(words.joined(separator: " "), book: book)
         guard !person.isEmpty, person.split(separator: " ").count <= 4 else { return nil }
         return EmailArguments(person: person, subject: subject, body: body, account: account)
+    }
+}
+
+/// FaceTime's "Call" confirmation for calls started from a link. Found and
+/// pressed through Accessibility, after the user has confirmed in Alfred.
+enum CallPrompt {
+    private static let titles = ["Call", "FaceTime", "FaceTime Audio", "Audio"]
+
+    /// Waits up to 6 s for FaceTime's prompt; true once Call is pressed.
+    static func pressCall() async -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+        let deadline = ContinuousClock.now + .seconds(6)
+        while ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(250))
+            // Found and pressed on the main actor: Accessibility elements
+            // can't cross actors.
+            let pressed: String? = await MainActor.run {
+                guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.FaceTime").first else { return nil }
+                let root = AXUIElementCreateApplication(app.processIdentifier)
+                AXUIElementSetMessagingTimeout(root, 0.5)
+                var buttons: [(AXUIElement, String)] = []
+                collectButtons(root, depth: 0, into: &buttons)
+                // "Call" first; the others only when it's the prompt's only choice.
+                for title in titles {
+                    if let match = buttons.first(where: { $0.1 == title }),
+                       AXUIElementPerformAction(match.0, kAXPressAction as CFString) == .success {
+                        return title
+                    }
+                }
+                return nil
+            }
+            if let pressed {
+                Log.tools.notice("call: pressed FaceTime's \(pressed, privacy: .public) button")
+                return true
+            }
+        }
+        Log.tools.notice("call: FaceTime's call button wasn't found")
+        return false
+    }
+
+    @MainActor
+    private static func collectButtons(_ element: AXUIElement, depth: Int, into buttons: inout [(AXUIElement, String)]) {
+        guard depth < 9, buttons.count < 60 else { return }
+        var role: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+        if (role as? String) == "AXButton" {
+            for attribute in [kAXTitleAttribute, kAXDescriptionAttribute] {
+                var value: CFTypeRef?
+                if AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success, let text = value as? String, !text.isEmpty {
+                    buttons.append((element, text))
+                    break
+                }
+            }
+        }
+        var children: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &children) == .success,
+              let list = children as? [AXUIElement] else { return }
+        for child in list { collectButtons(child, depth: depth + 1, into: &buttons) }
     }
 }

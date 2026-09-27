@@ -526,7 +526,7 @@ Adds, moves and deletes events in Apple Calendar or Google. Outlook stays read-o
 - **Recognition:** contact names are given to the command recogniser as expected words, and the Accent setting (e.g. English (India)) now applies to commands as well as the wake word.
 - **The name must have been said** (grounding), so the model can't pick a person.
 
-**`call`:** a phone call through the iPhone (`tel:`, Calls from iPhone) or FaceTime video or audio. A mobile number is preferred. It always shows the person and number and waits for "yes".
+**`call`:** a phone call through the iPhone (`tel:`, Calls from iPhone) or FaceTime video or audio. A mobile number is preferred. It always shows the person and number and waits for "yes". macOS asks again before a call started from a link, so after the user's yes Alfred presses FaceTime's Call button through Accessibility (`CallPrompt`, up to 6 s). If it can't find the button, it says to click Call. When FaceTime closes right after Call, the other person isn't reachable on FaceTime at that number; that isn't something Alfred can see.
 
 **`sendMessage`:**
 - **Messages:** iMessage, then SMS through the iPhone, sent by scripting Messages only after the text is shown and confirmed. If Messages refuses, the text is left typed in for the user.
