@@ -63,7 +63,9 @@ final class LiveTranscriber: @unchecked Sendable {
         let results = Task {
             do {
                 for try await result in transcriber.results {
-                    let text = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
+                    // Spaces only: Apple's dictation turns "new line" into a
+                    // line break itself, which must survive.
+                    let text = String(result.text.characters).trimmingCharacters(in: .whitespaces)
                     guard !text.isEmpty else { continue }
                     if result.isFinal {
                         onSegment(text, result.range.start.seconds.isFinite ? result.range.start.seconds : 0)

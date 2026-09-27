@@ -29,6 +29,10 @@ enum SmallTalk {
         for sendIt in ["send it", "send", "send it now", "send that", "send the message", "send the email"] {
             table[sendIt] = "There's nothing waiting to be sent."
         }
+        // A yes or no with nothing asked (e.g. the question timed out).
+        for answer in ["yes", "yeah", "yep", "no", "nope", "yes please", "no thanks", "do it", "go ahead", "confirm", "cancel"] {
+            table[answer] = "There's nothing waiting for an answer."
+        }
         for thanks in ["thanks", "thank you", "thanks a lot", "thank you so much", "cheers", "much appreciated"] {
             table[thanks] = "You're welcome."
         }

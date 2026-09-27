@@ -34,7 +34,8 @@ public final class MemoryStore: Sendable {
     init(file: URL?) {
         self.file = file
         let loaded = file.flatMap { try? Data(contentsOf: $0) }.flatMap { try? JSONDecoder().decode([Memory].self, from: $0) }
-        items = Mutex(loaded ?? [])
+        // Placeholders saved before they were filtered out.
+        items = Mutex((loaded ?? []).filter { Conversation.worthKeeping($0.text) })
     }
 
     public var all: [Memory] { items.withLock { $0.sorted { $0.date > $1.date } } }
@@ -123,7 +124,7 @@ public final class MemoryStore: Sendable {
 struct ConversationMemory: Sendable {
     @Guide(description: "One sentence: what the conversation was about, from the user's side")
     var summary: String
-    @Guide(description: "Facts about the user worth remembering later: plans with dates, people, preferences, ongoing situations. Empty if none.", .count(0...3))
+    @Guide(description: "Facts about the user worth remembering later: plans with dates, people, preferences, ongoing situations. Leave the list empty when there are none; never write placeholders.", .count(0...3))
     var facts: [String]
 }
 
@@ -205,8 +206,16 @@ public actor Conversation {
             Write only what the user said or clearly meant; never invent details.
             """)
         guard let notes = try? await summarizer.respond(to: String(transcript.suffix(4_000)), generating: ConversationMemory.self).content else { return }
-        memory.add(notes.summary, kind: .summary, conversation: conversation)
-        for fact in notes.facts where !fact.isEmpty { memory.add(fact, kind: .fact, conversation: conversation) }
+        if Self.worthKeeping(notes.summary) { memory.add(notes.summary, kind: .summary, conversation: conversation) }
+        for fact in notes.facts where Self.worthKeeping(fact) { memory.add(fact, kind: .fact, conversation: conversation) }
+    }
+
+    /// Drops the model's placeholders ("no facts", "none") and scraps.
+    static func worthKeeping(_ text: String) -> Bool {
+        let words = AppNameMatcher.normalize(text).split(separator: " ")
+        guard words.count >= 3 else { return false }
+        let placeholders = ["no facts", "none", "nothing", "n a", "no relevant", "not mentioned", "no information", "no specific"]
+        return !placeholders.contains { AppNameMatcher.normalize(text).hasPrefix($0) }
     }
 
     /// Plain spoken text: no markdown, no bullet characters.

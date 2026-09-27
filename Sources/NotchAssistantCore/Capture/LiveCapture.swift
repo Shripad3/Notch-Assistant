@@ -40,6 +40,9 @@ public actor LiveCapture {
     private var dictated = ""
     private var noteID: String?
     private var noteTitle = ""
+    /// Typing straight into the open note (fast) rather than rewriting it
+    /// through AppleScript after every sentence.
+    private var typingIntoNote = false
     private var limit: Task<Void, Never>?
     private var onChange: (@Sendable (CaptureStatus?) -> Void)?
     private var queue: [@Sendable () async -> Void] = []
@@ -121,9 +124,17 @@ public actor LiveCapture {
         formatter = DictationFormatter()
         dictated = ""
         noteID = nil
+        typingIntoNote = false
         if toNotes {
             noteTitle = "Dictation " + Date().formatted(date: .abbreviated, time: .shortened)
             noteID = try await Self.createNote(titled: noteTitle)
+            // Notes usually leaves the cursor in the new note: type there.
+            try? await Task.sleep(for: .milliseconds(600))
+            if AXIsProcessTrusted(), await FocusedText.isEditingText(inApp: "com.apple.Notes") {
+                await FocusedText.moveToEnd()
+                await FocusedText.insert("\n")
+                typingIntoNote = true
+            }
         }
         let now = Date()
         let transcriber = LiveTranscriber(punctuate: false, onSegment: { [weak self] text, _ in
@@ -142,16 +153,16 @@ public actor LiveCapture {
             switch edit {
             case .insert(let text):
                 dictated += text
-                if !toNotes { await enqueue { await FocusedText.insert(text) } }
+                if !toNotes || typingIntoNote { await enqueue { await FocusedText.insert(text) } }
             case .delete(let count):
                 dictated.removeLast(min(count, dictated.count))
-                if !toNotes { await enqueue { await FocusedText.deleteBackward(count) } }
+                if !toNotes || typingIntoNote { await enqueue { await FocusedText.deleteBackward(count) } }
             case .stop:
                 _ = await stop()
                 return
             }
         }
-        if toNotes, let noteID {
+        if toNotes, !typingIntoNote, let noteID {
             let body = NoteTool.body(title: noteTitle, text: dictated)
             await enqueue { try? await Self.setNote(noteID, body: body) }
         }
@@ -265,6 +276,30 @@ enum FocusedText {
         try? await Task.sleep(for: .milliseconds(250))
         board.clearContents()
         if let saved { board.setString(saved, forType: .string) }
+    }
+
+    /// True when a text field or text area of that app has the focus.
+    static func isEditingText(inApp bundleID: String) -> Bool {
+        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else { return false }
+        let system = AXUIElementCreateSystemWide()
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success, let focused else { return false }
+        let element = focused as! AXUIElement
+        var pid: pid_t = 0
+        AXUIElementGetPid(element, &pid)
+        var role: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+        return pid == app.processIdentifier && ["AXTextArea", "AXTextField"].contains(role as? String ?? "")
+    }
+
+    /// ⌘↓: the end of the text.
+    static func moveToEnd() {
+        let source = CGEventSource(stateID: .hidSystemState)
+        for down in [true, false] {
+            let event = CGEvent(keyboardEventSource: source, virtualKey: 0x7D, keyDown: down)
+            event?.flags = .maskCommand
+            event?.post(tap: .cghidEventTap)
+        }
     }
 
     static func deleteBackward(_ count: Int) async {

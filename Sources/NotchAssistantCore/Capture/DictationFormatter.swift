@@ -27,6 +27,7 @@ public struct DictationFormatter: Sendable {
     public init() {}
 
     private static let symbols: [(words: [String], text: String, attachesLeft: Bool)] = [
+        (["⏎⏎"], "\n\n", true), (["⏎"], "\n", true),
         (["new", "paragraph"], "\n\n", true),
         (["go", "to", "a", "new", "line"], "\n", true), (["go", "to", "the", "next", "line"], "\n", true),
         (["go", "to", "next", "line"], "\n", true), (["new", "line"], "\n", true), (["next", "line"], "\n", true),
@@ -46,7 +47,10 @@ public struct DictationFormatter: Sendable {
         current = 0
         sinceSentence = 0
         defer { if current > 0 { stretches.append(current) } }
-        let words = segment.split(whereSeparator: \.isWhitespace).map(String.init)
+        // Line breaks the recogniser made itself become words, like the
+        // spoken ones.
+        let marked = segment.replacingOccurrences(of: "\n\n", with: " ⏎⏎ ").replacingOccurrences(of: "\n", with: " ⏎ ")
+        let words = marked.split(whereSeparator: \.isWhitespace).map(String.init)
         let keys = words.map { $0.lowercased().trimmingCharacters(in: .punctuationCharacters) }
         var edits: [Edit] = []
         var pending: [String] = []

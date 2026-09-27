@@ -62,3 +62,41 @@ struct CaptureRoutingTests {
         #expect(NoteTool.body(title: "T", text: "a\n\nb") == "<div><b>T</b></div><div>a</div><div><br></div><div>b</div>")
     }
 }
+
+struct DictationFixTests {
+    @Test func recogniserLineBreaksSurvive() {
+        var formatter = DictationFormatter()
+        var text = ""
+        for edit in formatter.process("first line\nsecond line\n\nthird") {
+            if case .insert(let piece) = edit { text += piece }
+        }
+        #expect(text == "First line\nSecond line\n\nThird")
+    }
+
+    @Test(arguments: [
+        ("start typing", "here", nil as String?),
+        ("type", "here", nil),
+        ("Type in hey Amay, this is a test message", "here", "hey Amay, this is a test message"),
+        ("type hello there", "here", "hello there"),
+        ("start typing in notes", "notes", nil),
+        ("stop typing", "stop", nil),
+    ])
+    func phrasings(said: String, target: String, text: String?) throws {
+        let args = try #require(DirectCommand(said).flatMap { DictationTool().directArguments(for: $0) })
+        #expect(args.target == target)
+        #expect(args.text == text)
+    }
+
+    @Test func aLoneYesHasNothingToAnswer() {
+        #expect(SmallTalk.reply(to: "Yes") == "There's nothing waiting for an answer.")
+    }
+
+    @Test func silenceShowsTheQuestionAgain() {
+        #expect(StateMachine.transition(from: .listening(partial: ""), on: .needsConfirmation("Send?", [])) == .confirm("Send?", []))
+    }
+
+    @Test(arguments: [("no facts", false), ("long day", false), ("None.", false), ("Has a presentation on Friday", true)])
+    func junkMemories(text: String, kept: Bool) {
+        #expect(Conversation.worthKeeping(text) == kept)
+    }
+}

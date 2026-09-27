@@ -555,6 +555,7 @@ A lone "send it" with nothing pending replies that nothing is waiting.
 - **Speed:** about 1.5–2 s per reply on the M4 Air.
 - **Follow-up:** after a reply is spoken, the coordinator listens again without the wake word (6 s patience). The answer is kept exactly as said: a follow-up isn't trimmed like a command.
 - **Mid-conversation:** a command runs and ends the conversation. "That's all", "bye" or silence ends it too, and so does anything that returns the notch to idle.
+- **Reply timing:** mid-conversation the reply stays on screen until it has been spoken (up to 40 s). A fixed 4 s dismissal once ended conversations before Alfred finished talking.
 
 **`MemoryStore`** (on by default, Settings › Conversation):
 - **What's kept:** when a conversation ends, the model writes a one-sentence summary and up to three facts (`ConversationMemory`), stored in Application Support as JSON with on-device sentence embeddings (NaturalLanguage).
@@ -582,9 +583,13 @@ A lone "send it" with nothing pending replies that nothing is waiting.
   - "new line", "go to a new line" and "next line"; "new paragraph";
   - "scratch that", which removes what came after the last full stop, else the previous stretch of speech;
   - "stop dictation".
-- **Formatting:** capitals after sentence ends, and spacing.
+- **Formatting:** capitals after sentence ends, and spacing. Line breaks the recogniser makes itself (it can turn "new line" into one) are kept.
+- **Phrasings:** "start typing" and "type" start dictation; "type <words>" types just those words.
+- **Stopping:** "stop" or "that's all" said with ⌥Space while recording or dictating stops it, not the music.
+- **Hint:** it's shown the first time only.
+- **Dictating into Notes:** it types straight into the new note when Notes gives it focus, which is fast. Otherwise it rewrites the note after each sentence through AppleScript.
 
-**While recording.** The notch shows a pulsing red dot and the elapsed time next to it, and hovering shows the latest words. The wake word is paused (one microphone job at a time).
+**While recording.** The notch shows a pulsing red dot and the elapsed time next to it, and hovering shows the latest words. Clicking the dot, or Stop, ends it: the notch window accepts the first click (`FirstClickHostingView`), since a panel that never becomes active otherwise spent that click on focusing itself. The wake word is paused (one microphone job at a time).
 
 **Calls.** Every 2 s while the wake word is on, Alfred checks CoreAudio's process list for another *app* recording (`kAudioProcessPropertyIsRunningInput`; background services such as Siri don't count). While one is, the wake word is paused. ⌥Space and the menu bar still work, so a call can be transcribed on request. Recording never starts by itself.
 
@@ -603,6 +608,7 @@ A lone "send it" with nothing pending replies that nothing is waiting.
 - **How it runs:** the coordinator shows it in the Question state and speaks it, waits until the speech has finished (so the microphone doesn't hear it), then listens without the wake word, with 6 s rather than 2 s to start answering.
 - **The answer** is appended to the original command, which runs again. "Never mind" or "no" ends it.
 - **Generic confirmations:** the same parked-action mechanism as file batches carries any action that waits for "yes". "Undo that" reverses whichever came last, a file change or a calendar change.
+- **Yes or no without the wake word:** every confirmation is spoken, then Alfred listens for the answer without the wake word. Silence puts the question back on screen, for a click or "Alfred, yes", instead of dropping it. A lone "yes" or "no" with nothing pending gets "There's nothing waiting for an answer", never a guessed command.
 
 ### arrangeWindow, clipboard, takeNote
 
@@ -998,7 +1004,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 325 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 330 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist

@@ -31,6 +31,8 @@ public actor AssistantCoordinator {
     /// In a conversation: after a reply, Alfred listens again without the
     /// wake word.
     private var conversing = false
+    /// The confirmation on screen, to show again if the answer was silence.
+    private var shownConfirmation: (text: String, items: [ResultItem])?
     /// The command a question was asked about ("add lunch with Sam"): the
     /// answer ("tomorrow at 1") is added to it.
     private var followUpCommand: String?
@@ -186,7 +188,22 @@ public actor AssistantCoordinator {
     private func process(session id: Int) async {
         var transcript = await transcription.finish()
         guard !transcript.isEmpty else {
+            // No answer to a yes/no question: keep it on screen for a click
+            // or "Alfred, yes", rather than dropping it.
+            if pendingConfirmation != nil, let shown = shownConfirmation {
+                await apply(.needsConfirmation(shown.text, shown.items), session: id)
+                return
+            }
             await apply(.silence, session: id)
+            return
+        }
+
+        // While recording or dictating, "stop" is for that, not the music.
+        if await LiveCapture.shared.status != nil,
+           ["stop", "stop it", "stop that", "stop dictation", "stop dictating", "stop typing", "stop recording", "stop transcribing",
+            "that s all", "i m done", "done", "finish", "end it"].contains(AppNameMatcher.normalize(WakePhrase.commandAfterConfirmedWake(transcript))) {
+            await apply(.endpoint(transcript), session: id)
+            await apply(.textOnly(await LiveCapture.shared.stop()), session: id)
             return
         }
         if let wake, wake.isFollowUp {
@@ -304,7 +321,12 @@ public actor AssistantCoordinator {
             }
             if let token = outcomes.last?.confirmation {
                 pendingConfirmation = token
+                shownConfirmation = (text, items)
                 await apply(.needsConfirmation(text, items), session: id)
+                // Listen for "yes" or "no" straight away: no wake word needed.
+                await presenter.finishedSpeaking()
+                guard id == session, case .confirm = state else { return }
+                await activationBegan(wake: .followUp())
                 return
             }
             if outcomes.count == 1, outcomes[0].isAnswer {
@@ -409,7 +431,9 @@ public actor AssistantCoordinator {
             delay = resultDelay
             resultDelay = .seconds(3)
         case .confirm: delay = .seconds(20)
-        case .reply: delay = .seconds(4)
+        // Mid-conversation the reply stays until Alfred has finished saying it
+        // and starts listening; the long delay is only a fallback.
+        case .reply: delay = conversing ? .seconds(40) : .seconds(4)
         case .list: delay = .seconds(10)
         case .error: delay = .seconds(5)
         case .alert: delay = Self.ringFor

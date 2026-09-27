@@ -114,6 +114,9 @@ public final class Speaker {
             text = answer
         case .question(let question) where mode != .never:
             text = question
+        case .confirm(let question, _) where mode != .never:
+            // "Send to Sam: …?" is answered by voice, so it's said aloud.
+            text = question
         default:
             return
         }
@@ -144,7 +147,7 @@ public final class Speaker {
     /// Waits (at most 10 s) until nothing is being said, plus a moment for
     /// the echo to fade.
     public func waitUntilDone() async {
-        let deadline = ContinuousClock.now + .seconds(10)
+        let deadline = ContinuousClock.now + .seconds(40)
         try? await Task.sleep(for: .milliseconds(150))
         while neuralSpeaking || synthesizer.isSpeaking, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(100))

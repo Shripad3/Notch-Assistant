@@ -356,7 +356,10 @@ private extension DynamicNotch {
         menubarHeight = screen.menubarHeight
 
         let style = effectiveStyle(for: screen)
-        let view = NSHostingView(rootView: NotchContentView(dynamicNotch: self, style: style))
+        // PATCH (Notch Assistant): act on the first click. The panel never
+        // becomes active, so a plain hosting view spent the first click on
+        // focusing the window and buttons (Stop, Confirm) did nothing.
+        let view = FirstClickHostingView(rootView: NotchContentView(dynamicNotch: self, style: style))
 
         let panel = DynamicNotchPanel(
             contentRect: .zero,

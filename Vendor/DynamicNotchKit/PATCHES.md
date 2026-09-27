@@ -19,4 +19,10 @@ with spec §5. Changes:
 5. Removed `DynamicNotchInfo` (unused, and it relied on the default screen)
    and the DocC catalogue.
 
+6. **Buttons work on the first click.** The panel's content is a
+   `FirstClickHostingView` (an `NSHostingView` that accepts the first mouse
+   click). The panel is never active, so the first click on a plain hosting
+   view only focused the window, and buttons such as Stop and Confirm did
+   nothing.
+
 Everything else is upstream as-is. Patched lines are marked `PATCH (Notch Assistant)`.

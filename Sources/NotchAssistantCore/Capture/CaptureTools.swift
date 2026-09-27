@@ -114,6 +114,8 @@ struct TranscribeTool: AssistantTool {
 struct DictationArguments: Sendable {
     @Guide(description: "Where the words go", .anyOf(["here", "notes", "stop"]))
     var target: String
+    @Guide(description: "Words to type right away, only if the user said them after \"type\"")
+    var text: String?
 }
 
 /// Dictation: into the focused text field ("dictate", "type what I say")
@@ -132,22 +134,40 @@ struct DictationTool: AssistantTool {
 
     func target(of arguments: DictationArguments) -> String { arguments.target == "notes" ? "Notes" : "Here" }
 
+    static let hintKey = "dictation.hintShown"
+
     func execute(_ arguments: DictationArguments) async throws -> ToolResult {
         if arguments.target == "stop" { return ToolResult(await LiveCapture.shared.stop()) }
+        // "Type hello there": just those words, now.
+        if let text = arguments.text?.trimmingCharacters(in: .whitespaces), !text.isEmpty, Recipients.wasSaid(text) {
+            try SystemKeys.ensureTrusted()
+            await FocusedText.insert(text)
+            return ToolResult("Typed")
+        }
         let toNotes = arguments.target == "notes"
         try await LiveCapture.shared.startDictation(toNotes: toNotes)
-        return ToolResult("Dictating\(toNotes ? " into a new note" : ""). Say “new line”, “full stop”, “scratch that”, or “stop dictation”")
+        let place = toNotes ? " into a new note" : ""
+        // The instructions once; after that, just "Dictating".
+        guard !UserDefaults.standard.bool(forKey: Self.hintKey) else { return ToolResult("Dictating\(place)") }
+        UserDefaults.standard.set(true, forKey: Self.hintKey)
+        return ToolResult("Dictating\(place). Say “new line”, “full stop”, “scratch that”, or “stop dictation”")
     }
 
     func directArguments(for command: DirectCommand) -> DictationArguments? {
         let text = command.text
-        if ["stop dictation", "stop dictating", "end dictation"].contains(text) { return DictationArguments(target: "stop") }
+        if ["stop dictation", "stop dictating", "end dictation", "stop typing"].contains(text) { return DictationArguments(target: "stop", text: nil) }
         if ["take dictation", "dictate a note", "dictate into notes", "dictate into a note", "dictate in notes", "start dictating a note",
-            "dictate to notes", "start a dictation note"].contains(text) {
-            return DictationArguments(target: "notes")
+            "dictate to notes", "start a dictation note", "take notes", "start taking notes", "type in notes", "start typing in notes"].contains(text) {
+            return DictationArguments(target: "notes", text: nil)
         }
-        if ["dictate", "start dictation", "start dictating", "dictation", "type what i say", "type for me", "dictate here", "start typing what i say"].contains(text) {
-            return DictationArguments(target: "here")
+        if ["dictate", "start dictation", "start dictating", "dictation", "type what i say", "type for me", "dictate here", "start typing what i say",
+            "start typing", "type", "start writing", "type this", "dictate this", "keep typing"].contains(text) {
+            return DictationArguments(target: "here", text: nil)
+        }
+        // "type hello Amay, this is a test", "type in …", "type out …".
+        if let words = Recipients.rest(of: command.original, after: Recipients.opening + #"(?:start\s+)?typ(?:e|ing)(?:\s+(?:in|out|this))?[:,]?\s+"#),
+           !words.isEmpty, !["what i say", "for me", "in notes"].contains(words.lowercased()) {
+            return DictationArguments(target: "here", text: words)
         }
         return nil
     }

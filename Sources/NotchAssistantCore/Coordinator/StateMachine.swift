@@ -80,7 +80,9 @@ public enum StateMachine {
             items.isEmpty ? .result(text) : .list(text, items)
         case (.acting, .answer(let text)):
             .reply(text)
-        case (.acting, .needsConfirmation(let text, let items)):
+        case (.acting, .needsConfirmation(let text, let items)),
+             (.listening, .needsConfirmation(let text, let items)):
+            // From listening: the answer to a yes/no was silence; ask again.
             .confirm(text, items)
         case (.list, .selected(let text)), (.confirm, .selected(let text)):
             .result(text)

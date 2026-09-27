@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import SwiftUI
 
 final class DynamicNotchPanel: NSPanel {
     override init(
@@ -28,6 +29,13 @@ final class DynamicNotchPanel: NSPanel {
     }
 
     override var canBecomeKey: Bool {
+        true
+    }
+}
+
+// PATCH (Notch Assistant): see DynamicNotch.swift, where this is used.
+final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
     }
 }
