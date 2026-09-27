@@ -34,6 +34,9 @@ public struct ToolRegistry: Sendable {
         AnyAssistantTool(WindowTool()),
         AnyAssistantTool(ClipboardTool()),
         AnyAssistantTool(NoteTool()),
+        // After windows, clipboard and notes, which have their own "add",
+        // "move" and "put"; before files, whose "move" needs a folder.
+        AnyAssistantTool(CalendarEventTool()),
         // After openApp and openURL: "open spotify" must stay an app.
         AnyAssistantTool(OpenFileTool()),
         AnyAssistantTool(FindFilesTool()),

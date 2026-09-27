@@ -383,6 +383,7 @@ Every tool conforms to `AssistantTool`: a name, a description the model reads, a
 | `reminder` | `task`, `when?` | No | Reminders | n/a | after v3 |
 | `currentTime` | `what`, `place?` | Only for a place | None | n/a | after v3 |
 | `calendar` | `action`, `when?` | Google/Outlook only | Calendar | n/a — read-only | after v3 |
+| `calendarEvent` | `action`, `title?`, `when?`, `newWhen?`, `duration?` | Google only | Calendar | Undo for add and move; delete confirmed | after v3 |
 | `arrangeWindow` | `action`, `app?` | No | Accessibility | n/a | after v3 |
 | `clipboard` | `action` | No | Accessibility (paste only) | n/a | after v3 |
 | `takeNote` | `text` | No | Automation (Notes) | n/a — only creates | after v3 |
@@ -485,6 +486,30 @@ Reads the connected calendar aloud: "what's on my calendar tomorrow", "when's my
 | Outlook | Microsoft Graph `calendarView`, scope `Calendars.Read`, tenant `common` | Their own app registration (public client, redirect `http://localhost`): client ID only |
 
 Google and Outlook sign in with `OAuthSession`, which is shared: Authorization Code with PKCE and a loopback redirect. The listener binds 127.0.0.1 and ::1 only, for the length of the sign-in. Tokens, and Google's client secret, live in the Keychain. No app-owned credentials exist, so nothing needs to be kept secret in the public repository.
+
+### calendarEvent
+
+Adds, moves and deletes events in Apple Calendar or Google. Outlook stays read-only.
+
+- **Phrasings:** "add lunch with Sam tomorrow at 1", "schedule a meeting on Friday at 3 for 30 minutes", "move my dentist appointment to Monday", "push standup to 10", "make standup 30 minutes", "cancel my 3 o'clock".
+- **Asking:** when the name, the day and time, or which of several events is missing, the tool asks, and the answer completes the command. See Follow-up questions below.
+- **Times:** without am/pm, an appointment at 1–7 is afternoon or evening and at 8–12 morning or noon.
+- **Moving:**
+  - a new day keeps the time;
+  - a new time keeps the day;
+  - the event is found by its name and original time only, never by the new time.
+- **Safety:**
+  - adding and moving can be undone for 10 minutes;
+  - deleting shows the event and waits for "yes";
+  - repeating events change one occurrence unless "all of them" is said;
+  - events with other invitees are refused, since changing them would notify people.
+- **Google:** it asks for the `calendar.events` and `tasks` permissions in addition to read-only, so users who signed in before must sign in again.
+
+**Follow-up questions.** A tool can return a question instead of a result.
+
+- **How it runs:** the coordinator shows it in the Question state and speaks it, waits until the speech has finished (so the microphone doesn't hear it), then listens without the wake word, with 6 s rather than 2 s to start answering.
+- **The answer** is appended to the original command, which runs again. "Never mind" or "no" ends it.
+- **Generic confirmations:** the same parked-action mechanism as file batches carries any action that waits for "yes". "Undo that" reverses whichever came last, a file change or a calendar change.
 
 ### arrangeWindow, clipboard, takeNote
 
@@ -877,7 +902,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 280 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 290 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist
@@ -944,7 +969,7 @@ These are the invariants. If a future change violates one, the change is wrong, 
 - Tier 2 in-page navigation always falls back to Tier 1 (§9), and never changes a tab it did not open.
 - A spoken command's arguments must have been said; the model cannot introduce a URL, app, song, place or file on its own (§8).
 - Routines cannot change files (§9).
-- The calendar is read-only; no tool creates, changes or deletes an event (§9).
+- Calendar changes are undoable or confirmed: adding and moving can be undone, deleting waits for "yes", and events with other people invited are never changed by voice (§9).
 
 ## Sources
 

@@ -90,17 +90,42 @@ public actor OAuthSession {
 
     /// A GET with a fresh access token, retried once after a refresh.
     func get(_ url: URL, headers: [String: String] = [:]) async throws -> Data {
+        try await request("GET", url, headers: headers)
+    }
+
+    /// Any call with a fresh access token; `json` is sent as the body.
+    func request(_ method: String, _ url: URL, json: [String: Any]? = nil, headers: [String: String] = [:]) async throws -> Data {
+        let body = try json.map { try JSONSerialization.data(withJSONObject: $0) }
         for attempt in 0..<2 {
             var request = URLRequest(url: url, timeoutInterval: 10)
+            request.httpMethod = method
             request.setValue("Bearer \(try await accessToken(forceRefresh: attempt > 0))", forHTTPHeaderField: "Authorization")
+            if let body {
+                request.httpBody = body
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            }
             headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
             let (data, response) = try await send(request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             if status == 401 { continue }
-            guard status == 200 else { throw ToolError("\(configuration.service) answered with an error (\(status))") }
+            guard (200..<300).contains(status) else { throw Self.failure(status, data, service: configuration.service) }
             return data
         }
         throw ToolError("\(configuration.service) sign-in has expired; sign in again in Settings")
+    }
+
+    /// Turns the common refusals into something the user can act on.
+    static func failure(_ status: Int, _ data: Data, service: String) -> any Error {
+        let text = String(data: data, encoding: .utf8) ?? ""
+        if status == 403, text.contains("SCOPE_INSUFFICIENT") || text.contains("insufficientPermissions") || text.contains("insufficient_scope") {
+            return ToolError("\(service) needs a new permission for that: sign in again under Settings › Calendar")
+        }
+        if status == 403, text.contains("accessNotConfigured") || text.contains("SERVICE_DISABLED") {
+            let api = text.contains("tasks") ? "Google Tasks API" : "API"
+            return ToolError("Turn on the \(api) in your Google Cloud project, then try again")
+        }
+        if status == 404 { return ToolError("\(service) couldn't find that anymore") }
+        return ToolError("\(service) answered with an error (\(status))")
     }
 
     private func accessToken(forceRefresh: Bool) async throws -> String {

@@ -25,7 +25,7 @@ struct CalendarPane: View {
                     if let message { Text(message).font(.caption).foregroundStyle(.orange).lineLimit(2) }
                 }
             } footer: {
-                Text("Only one calendar is connected at a time; connecting one disconnects the others. Alfred only reads: it never adds, changes or deletes events. Try “what's on my calendar tomorrow?”, “when's my next meeting?” or “am I free at 3?”")
+                Text("Only one calendar is connected at a time; connecting one disconnects the others. Try “what's on my calendar tomorrow?”, “add lunch with Sam tomorrow at 1”, “move my dentist appointment to Friday” or “cancel my 3 o'clock”. Adding and moving can be undone (“undo that”); deleting always asks first; events with other people invited are left alone. Outlook is read-only.")
             }
 
             switch provider {
@@ -79,15 +79,16 @@ struct CalendarPane: View {
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
                 Text("One-time setup, free (about 5 minutes):")
-                Text("1. In Google Cloud Console, create a project and enable the **Google Calendar API**.")
+                Text("1. In Google Cloud Console, create a project and enable the **Google Calendar API** and the **Google Tasks API**.")
                 Text("2. **OAuth consent screen**: choose External, fill in the app name and your email. Under Audience, set Publishing status to **In production** (otherwise Google signs you out every 7 days). Google will say the app is unverified; that's expected for your own app.")
                 Text("3. **Credentials › Create credentials › OAuth client ID**, application type **Desktop app**.")
                 Text("4. Paste the Client ID and Client secret here, press Return, then Sign In.")
                 HStack {
                     Link("Enable the Calendar API", destination: URL(string: "https://console.cloud.google.com/apis/library/calendar-json.googleapis.com")!)
+                    Link("Enable the Tasks API", destination: URL(string: "https://console.cloud.google.com/apis/library/tasks.googleapis.com")!)
                     Link("Credentials", destination: URL(string: "https://console.cloud.google.com/apis/credentials")!)
                 }
-                Text("Alfred asks only for read-only access. The secret and your sign-in are stored in the Keychain.")
+                Text("Alfred asks to see your calendars, add and change events, and manage tasks. Signed in before this update? Sign in again to allow adding events. The secret and your sign-in are stored in the Keychain.")
             }
         }
     }

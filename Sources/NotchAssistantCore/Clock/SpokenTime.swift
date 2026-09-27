@@ -227,6 +227,8 @@ public struct SpokenWhen: Equatable, Sendable {
     public let date: Date
     /// False for a day with no time ("tomorrow"): a date-only reminder.
     public let hasTime: Bool
+    /// False for a time with no day ("at 3"): the next 3 o'clock was chosen.
+    public var hasDay = true
     /// The words that said it, including "at", "on" and "in".
     let consumed: Set<Int>
 
@@ -282,7 +284,7 @@ public struct SpokenWhen: Equatable, Sendable {
         if hint == nil, hour >= 1, hour <= 12 { hours = [hour % 12, hour % 12 + 12] }
         let candidates = hours.compactMap { next(hour: $0, minute: minute, after: now, calendar: calendar) }
         guard let date = candidates.min() else { return nil }
-        return SpokenWhen(date: date, hasTime: true, consumed: consumed)
+        return SpokenWhen(date: date, hasTime: true, hasDay: false, consumed: consumed)
     }
 
     enum Meridiem { case am, pm }
