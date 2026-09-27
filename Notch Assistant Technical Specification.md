@@ -28,7 +28,7 @@ The requirement is **no cloud AI**, not *no network*. Inference is local: no API
 - **No file contents, ever.** The agent can find, open and organise files. It cannot read what is inside one, and it cannot edit one. See §9.
 - **No permanent deletion.** Removal means the Trash. The agent has no operation that destroys data, and cannot empty the Trash.
 - **No general web agent.** In-page interaction is limited to a small set of scripted per-site recipes (§9).
-- **No cross-session memory.** Context lasts one activation. No history, no retrieval, no personalisation store.
+- **No cross-session memory** (v1). Context lasts one activation. *Revised 27 Sep 2026:* opt-in, local conversation memory is planned (see "Next: agreed on 27 Sep 2026" under Implementation phases).
 - **No text chat interface.** The notch is not a chat window.
 - **No distribution (for now).** One machine, signed with the owner's Apple Developer account (needed for the WeatherKit entitlement, §9). Publishing later means a Developer ID build with notarisation; the Mac App Store is out, because the app cannot run sandboxed (§13).
 - **No screen understanding.** No screenshots, no vision models over the display. The camera is used for hand pose only.
@@ -814,6 +814,35 @@ Wake word, endpointing, power profiles, file search and open, `controlSpotify`, 
 - **Calendar**: read-only, from Apple Calendar, Google Calendar or Outlook (§9).
 - **Natural voice**: Kokoro-82M, on device (§7).
 - **Desktop**: window arrangement, clipboard, quick notes (§9).
+
+### Next: agreed on 27 Sep 2026
+
+Four features, built in this order. The decisions are the owner's.
+
+**1. Calendar and task editing.**
+- **Events:**
+  - Create, move or edit, and delete events in the connected calendar (Apple Calendar or Google; a published Outlook link stays read-only).
+  - A missing date or time is asked for ("For when?"), and the answer is heard without the wake word.
+  - Creating happens at once and can be undone.
+  - Deleting always shows the event and waits for "yes". Recurring events change one occurrence unless "all of them" is said.
+  - Events with other invitees are not changed or deleted by voice, since that notifies people.
+- **Tasks:** a toggle between Apple Reminders and Google Tasks. Google Tasks keep dates only, so Alfred rings timed ones itself.
+
+**2. Calls, messages and email.**
+- **Contacts:** recipients are resolved from the Contacts app. The recogniser is given contact names, matching tolerates spelling variants of Indian names, and nicknames and relations ("Amma") are honoured. Ambiguity gives a pick list.
+- **Calls:** FaceTime, or phone calls through the iPhone.
+- **Texts:** iMessage or SMS through Messages. WhatsApp opens the chat with the text filled in; the user sends.
+- **Email:** a prefilled draft in Gmail or Outlook on the web by default. "Send it" sends Gmail through the API with a `gmail.send` permission. The university Outlook account allows drafts only.
+- **Nothing is ever sent without a shown draft and a "yes".**
+
+**3. Transcription and dictation.**
+- **Recording:** "start transcribing" records until "stop" or a click on the notch, which shows a red dot and the elapsed time. It saves a timestamped transcript; saving audio is a Settings toggle, off by default. It can summarise into Notes.
+- **Dictation:** into Notes or the focused text field, with spoken punctuation and "new line" / "go to a new line".
+- **Calls:** recording only ever starts when asked. While another app uses the microphone (a call), Alfred stops listening entirely; recording a call starts from ⌥Space or the menu bar.
+
+**4. Conversation.**
+- **How it talks:** spoken chat with the on-device model, replies spoken sentence by sentence, and a follow-up window with no wake word needed.
+- **Memory:** opt-in memory across conversations, kept as short local summaries and facts. The most relevant ones are given to the model each time. It can be seen and deleted in Settings, and "forget that" works.
 
 Candidates next:
 
