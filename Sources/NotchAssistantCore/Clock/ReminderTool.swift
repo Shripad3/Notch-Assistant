@@ -1,4 +1,3 @@
-import EventKit
 import Foundation
 import FoundationModels
 
@@ -10,8 +9,8 @@ struct ReminderArguments: Sendable {
     var when: String?
 }
 
-/// Adds a reminder to the Reminders app, so it syncs to the user's other
-/// devices and alerts even when this app isn't running.
+/// Adds a reminder or task to Apple Reminders or Google Tasks (Settings ›
+/// Calendar), so it syncs to the user's other devices.
 struct ReminderTool: AssistantTool {
     let name = "reminder"
     let title = "Reminder"
@@ -23,6 +22,8 @@ struct ReminderTool: AssistantTool {
         """
     let requiresNetwork = false
     let permission = ToolPermission.reminders
+    var store: (any TaskStore)?
+    var clock: ClockStore = .shared
     let reversibility = Reversibility.notApplicable
 
     func target(of arguments: ReminderArguments) -> String {
@@ -42,9 +43,18 @@ struct ReminderTool: AssistantTool {
             throw ToolError("That time has already passed")
         }
         let title = task.prefix(1).uppercased() + task.dropFirst()
-        try await Self.add(title: title, when: when)
-        guard let when else { return ToolResult("Added “\(title)” to Reminders") }
-        return ToolResult("I'll remind you to \(task) \(Self.phrase(when, now: now))")
+        let provider = TaskProvider.current
+        let store = store ?? provider.store
+        let id = try await store.add(title: title, due: when)
+        // Google Tasks can't alert at a time: Alfred rings it itself.
+        let ring = when.flatMap { $0.hasTime && !store.keepsTimes ? clock.addReminder(title, at: $0.date) : nil }
+        RecentUndo.record("Add “\(title)”") {
+            try await store.delete(id)
+            if let ring { self.clock.remove([ring.id]) }
+            return "Removed “\(title)”"
+        }
+        guard let when else { return ToolResult("Added “\(title)” to \(provider.title)", undoable: true) }
+        return ToolResult("I'll remind you to \(task) \(Self.phrase(when, now: now))", undoable: true)
     }
 
     /// "at 6:00 PM", "tomorrow at 9:00 AM", "tomorrow".
@@ -53,40 +63,29 @@ struct ReminderTool: AssistantTool {
         return text.first?.isNumber == true ? "at \(text)" : (when.hasTime || text == "today" || text == "tomorrow" ? text : "on \(text)")
     }
 
-    private static func add(title: String, when: SpokenWhen?) async throws {
-        let store = EKEventStore()
-        let allowed: Bool
-        do {
-            allowed = try await store.requestFullAccessToReminders()
-        } catch {
-            allowed = false
-        }
-        guard allowed else {
-            throw AssistantFailure("Reminders access is off for Notch Assistant", link: .reminders)
-        }
-        guard let calendar = store.defaultCalendarForNewReminders() else {
-            throw ToolError("There's no Reminders list to add to")
-        }
-        let reminder = EKReminder(eventStore: store)
-        reminder.title = title
-        reminder.calendar = calendar
-        if let when {
-            let components: Set<Calendar.Component> = when.hasTime ? [.year, .month, .day, .hour, .minute] : [.year, .month, .day]
-            reminder.dueDateComponents = Calendar.current.dateComponents(components, from: when.date)
-            // A timed reminder needs an alarm to actually alert.
-            if when.hasTime { reminder.addAlarm(EKAlarm(absoluteDate: when.date)) }
-        }
-        try store.save(reminder, commit: true)
-    }
-
     private static let starts = [
         "remind me", "set a reminder", "set reminder", "add a reminder", "create a reminder", "make a reminder",
-        "new reminder", "reminder",
+        "new reminder", "reminder", "add a task", "create a task", "new task", "add a to do", "add task",
     ]
+
+    /// "add milk to my to-do list", "put call the bank on my tasks".
+    private static let listPhrase = try! NSRegularExpression(
+        pattern: #"^\s*(?:please\s+)?(?:add|put)\s+(.+?)\s+(?:to|on|in)\s+(?:my\s+|the\s+)?(?:to-?\s?do|todo|tasks?|reminders)(?:\s+list)?\s*[.!]?\s*$"#,
+        options: [.caseInsensitive]
+    )
 
     /// "remind me to call Mum at 6", "remind me in 20 minutes to check the
     /// oven", "remind me tomorrow to buy milk", "set a reminder to …".
     func directArguments(for command: DirectCommand) -> ReminderArguments? {
+        let original = command.original
+        if let match = Self.listPhrase.firstMatch(in: original, range: NSRange(original.startIndex..., in: original)),
+           let range = Range(match.range(at: 1), in: original) {
+            let words = SpokenWords(String(original[range]))
+            let when = SpokenWhen.find(in: words, now: Date(), calendar: .current)
+            let rest = (0..<words.count).filter { !(when?.consumed.contains($0) ?? false) }
+            guard !rest.isEmpty else { return nil }
+            return ReminderArguments(task: words.text(rest), when: when.map { words.text($0.consumed) })
+        }
         guard let start = Self.starts.first(where: { command.text == $0 || command.text.hasPrefix($0 + " ") }) else { return nil }
         let words = SpokenWords(command.original)
         // Skip the words of the opening phrase, found in the original text.

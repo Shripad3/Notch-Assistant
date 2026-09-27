@@ -380,7 +380,8 @@ Every tool conforms to `AssistantTool`: a name, a description the model reads, a
 | `timer` | `action`, `duration?`, `label?` | No | None | n/a | after v3 |
 | `alarm` | `action`, `time?`, `label?` | No | None | n/a | after v3 |
 | `stopwatch` | `action` | No | None | n/a | after v3 |
-| `reminder` | `task`, `when?` | No | Reminders | n/a | after v3 |
+| `reminder` | `task`, `when?` | Google Tasks only | Reminders | Undo | after v3 |
+| `tasks` | `action`, `task?` | Google Tasks only | Reminders | Undo for complete; delete confirmed | after v3 |
 | `currentTime` | `what`, `place?` | Only for a place | None | n/a | after v3 |
 | `calendar` | `action`, `when?` | Google/Outlook only | Calendar | n/a — read-only | after v3 |
 | `calendarEvent` | `action`, `title?`, `when?`, `newWhen?`, `duration?` | Google only | Calendar | Undo for add and move; delete confirmed | after v3 |
@@ -504,6 +505,16 @@ Adds, moves and deletes events in Apple Calendar or Google. Outlook stays read-o
   - repeating events change one occurrence unless "all of them" is said;
   - events with other invitees are refused, since changing them would notify people.
 - **Google:** it asks for the `calendar.events` and `tasks` permissions in addition to read-only, so users who signed in before must sign in again.
+
+### Tasks
+
+`reminder` adds and `tasks` lists, completes or deletes tasks, in **Apple Reminders** or **Google Tasks**. The destination is a toggle in Settings › Calendar.
+
+- **Phrasings:** "remind me to call Mum at 6", "add milk to my to-do list", "what's on my to-do list?", "tick off call the bank", "mark buy milk as done", "delete the buy milk task".
+- **Undo:** adding and completing can be undone.
+- **Deleting** waits for "yes".
+- **Google Tasks' limit:** it keeps a due date but drops the time. For a timed Google task, Alfred also schedules a `reminder` countdown in its own clock, which rings like an alarm but isn't listed among the alarms.
+- **Google sign-in:** Google Tasks uses the Google Calendar sign-in (`tasks` scope), and needs the Google Tasks API enabled in the user's Cloud project.
 
 **Follow-up questions.** A tool can return a question instead of a result.
 
@@ -844,7 +855,7 @@ Wake word, endpointing, power profiles, file search and open, `controlSpotify`, 
 
 Four features, built in this order. The decisions are the owner's.
 
-**1. Calendar and task editing.**
+**1. Calendar and task editing.** *Built 27 Sep 2026 (§9: calendarEvent, Tasks).*
 - **Events:**
   - Create, move or edit, and delete events in the connected calendar (Apple Calendar or Google; a published Outlook link stays read-only).
   - A missing date or time is asked for ("For when?"), and the answer is heard without the wake word.
@@ -902,7 +913,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 290 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 300 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist

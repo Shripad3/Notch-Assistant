@@ -3,7 +3,8 @@ import Synchronization
 
 /// A timer or an alarm: something that rings at a moment.
 public struct Countdown: Codable, Sendable, Identifiable, Equatable {
-    public enum Kind: String, Codable, Sendable { case timer, alarm }
+    /// `reminder`: a timed Google Task, which Google can't alert for.
+    public enum Kind: String, Codable, Sendable { case timer, alarm, reminder }
 
     public let id: UUID
     public let kind: Kind
@@ -34,6 +35,7 @@ public struct Countdown: Codable, Sendable, Identifiable, Equatable {
         switch kind {
         case .timer: (label ?? ClockFormat.adjective(duration)) + " timer"
         case .alarm: label.map { "\($0) alarm" } ?? "\(fireDate.formatted(date: .omitted, time: .shortened)) alarm"
+        case .reminder: "reminder: \(label ?? "")"
         }
     }
 }
@@ -66,7 +68,7 @@ public struct ClockAlert: Sendable, Equatable, Identifiable {
     /// The Settings "Test" button: nothing to snooze or report as missed.
     public private(set) var isTest = false
 
-    public var canSnooze: Bool { kind == .alarm && !isTest }
+    public var canSnooze: Bool { kind != .timer && !isTest }
 
     /// How an alarm or timer will ring, from Settings.
     public static func test(_ kind: Countdown.Kind) -> ClockAlert {
@@ -90,6 +92,9 @@ public struct ClockAlert: Sendable, Equatable, Identifiable {
         case .timer:
             title = "Timer done"
             message = "Time's up. Your \(countdown.name) is done."
+        case .reminder:
+            title = "Reminder"
+            message = "Reminder: \(countdown.label ?? "")."
         case .alarm:
             let time = countdown.fireDate.formatted(date: .omitted, time: .shortened)
             title = countdown.label.map { "Alarm: \($0)" } ?? "Alarm"
@@ -243,6 +248,14 @@ public final class ClockStore: Sendable {
         let clock = calendar.dateComponents([.hour, .minute], from: alarm.fireDate)
         let today = calendar.date(bySettingHour: clock.hour ?? 0, minute: clock.minute ?? 0, second: 0, of: now) ?? now
         return today > now ? today : calendar.date(byAdding: .day, value: 1, to: today) ?? today
+    }
+
+    /// Rings a timed task that its own app can't alert for.
+    @discardableResult
+    func addReminder(_ text: String, at date: Date) -> Countdown {
+        let reminder = Countdown(id: UUID(), kind: .reminder, label: text, fireDate: date, duration: 0)
+        mutate { $0.countdowns.append(reminder) }
+        return reminder
     }
 
     @discardableResult

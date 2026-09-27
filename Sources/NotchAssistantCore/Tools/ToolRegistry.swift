@@ -19,6 +19,7 @@ public struct ToolRegistry: Sendable {
         AnyAssistantTool(AlarmTool()),
         AnyAssistantTool(StopwatchTool()),
         AnyAssistantTool(ReminderTool()),
+        AnyAssistantTool(TasksTool()),
         AnyAssistantTool(CurrentTimeTool()),
         AnyAssistantTool(CalendarTool()),
         AnyAssistantTool(OpenAppTool()),

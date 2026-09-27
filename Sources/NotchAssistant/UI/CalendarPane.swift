@@ -10,6 +10,7 @@ struct CalendarPane: View {
     @AppStorage(CalendarProvider.googleClientIDKey) private var googleID = ""
     @AppStorage(CalendarProvider.outlookClientIDKey) private var outlookID = ""
     @State private var googleSecret = ""
+    @AppStorage(TaskProvider.defaultsKey) private var taskProvider = TaskProvider.apple.rawValue
 
     var body: some View {
         Form {
@@ -32,6 +33,20 @@ struct CalendarPane: View {
             case .apple: appleSection
             case .google: googleSection
             case .outlook: outlookSection
+            }
+
+            Section {
+                Picker("Tasks and reminders go to", selection: $taskProvider) {
+                    ForEach(TaskProvider.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+                }
+                .pickerStyle(.radioGroup)
+            } header: {
+                Text("Tasks")
+            } footer: {
+                Text(taskProvider == TaskProvider.google.rawValue
+                    ? "Uses your Google sign-in above, and needs the Google Tasks API turned on in your Google Cloud project. Google Tasks keep a date but not a time, so Alfred rings timed reminders itself while it's running."
+                    : "Reminders sync to your iPhone and alert at their time even when Alfred isn't running.")
+                Text("Try “remind me to call Mum at 6”, “add milk to my to-do list”, “what's on my to-do list?”, “mark milk as done” or “delete the milk task”.")
             }
         }
         .formStyle(.grouped)

@@ -150,3 +150,93 @@ struct CalendarEditTests {
         #expect(DirectCommand(said).flatMap { CalendarEventTool().directArguments(for: $0) } == nil)
     }
 }
+
+private final class FakeTasks: TaskStore, @unchecked Sendable {
+    let keepsTimes: Bool
+    let tasks = Mutex<[OpenTask]>([])
+    let completed = Mutex<Set<String>>([])
+
+    init(keepsTimes: Bool = true, _ initial: [String] = []) {
+        self.keepsTimes = keepsTimes
+        tasks.withLock { $0 = initial.map { OpenTask(id: UUID().uuidString, title: $0, due: nil, hasTime: false) } }
+    }
+
+    func add(title: String, due: SpokenWhen?) async throws -> String {
+        let task = OpenTask(id: UUID().uuidString, title: title, due: due?.date, hasTime: due?.hasTime ?? false)
+        tasks.withLock { $0.append(task) }
+        return task.id
+    }
+
+    func openTasks() async throws -> [OpenTask] {
+        let done = completed.withLock { $0 }
+        return tasks.withLock { $0.filter { !done.contains($0.id) } }
+    }
+
+    func setCompleted(_ id: String, _ isCompleted: Bool) async throws {
+        completed.withLock { set in
+            if isCompleted { set.insert(id) } else { set.remove(id) }
+        }
+    }
+
+    func delete(_ id: String) async throws {
+        tasks.withLock { $0.removeAll { $0.id == id } }
+    }
+}
+
+@Suite(.serialized)
+struct TaskTests {
+    func run<T: AssistantTool>(_ said: String, _ tool: T) async throws -> ToolResult {
+        let args = try #require(DirectCommand(said).flatMap { tool.directArguments(for: $0) }, "no direct match for \(said)")
+        return try await CommandContext.$transcript.withValue(said) { try await tool.execute(args) }
+    }
+
+    @Test func addsToTheChosenList() async throws {
+        let store = FakeTasks()
+        _ = try await run("add milk to my to-do list", ReminderTool(store: store, clock: ClockStore(file: nil)))
+        #expect(store.tasks.withLock { $0.map(\.title) } == ["Milk"])
+    }
+
+    @Test func googleTimedTasksAlsoRing() async throws {
+        let clock = ClockStore(file: nil)
+        _ = try await run("remind me to call Mum at 6 pm", ReminderTool(store: FakeTasks(keepsTimes: false), clock: clock))
+        #expect(clock.snapshot.countdowns.first?.kind == .reminder)
+        #expect(clock.snapshot.alarms.isEmpty)
+        _ = try await run("remind me to call Mum at 6 pm", ReminderTool(store: FakeTasks(keepsTimes: true), clock: clock))
+        #expect(clock.snapshot.countdowns.count == 1)
+    }
+
+    @Test func listsCompletesAndUndoes() async throws {
+        let store = FakeTasks(["Buy milk", "Call the bank"])
+        let tool = TasksTool(store: store)
+        #expect(try await run("what's on my to-do list", tool).text.hasPrefix("You have 2 tasks"))
+        _ = try await run("mark buy milk as done", tool)
+        #expect(try await store.openTasks().map(\.title) == ["Call the bank"])
+        _ = try await RecentUndo.take()?.undo()
+        #expect(try await store.openTasks().count == 2)
+    }
+
+    @Test func deletingWaitsForYes() async throws {
+        let store = FakeTasks(["Buy milk"])
+        let result = try await run("delete the buy milk task", TasksTool(store: store))
+        #expect(try await store.openTasks().count == 1)
+        _ = try await Confirmations.confirm(try #require(result.confirmation))
+        #expect(try await store.openTasks().isEmpty)
+    }
+
+    @Test(arguments: [
+        ("add milk to my to-do list", "reminder"),
+        ("what's on my to-do list", "tasks"),
+        ("tick off call the bank", "tasks"),
+        ("mark buy milk as done", "tasks"),
+        ("delete the buy milk task", "tasks"),
+        ("remind me to call Mum at 6", "reminder"),
+    ])
+    func routes(said: String, tool: String) {
+        #expect(DirectMatcher.plan(for: said, tools: ToolRegistry.standard.tools)?.steps.first?.tool.name == tool)
+    }
+
+    @Test func googleDueDatesAreLocalDays() {
+        let date = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 28, hour: 18))!
+        #expect(GoogleTasks.dueString(date) == "2026-09-28T00:00:00.000Z")
+    }
+}

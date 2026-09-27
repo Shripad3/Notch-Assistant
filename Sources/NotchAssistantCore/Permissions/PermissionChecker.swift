@@ -54,7 +54,7 @@ public enum PermissionChecker {
                            link: .automation, status: notesStatus),
             PermissionItem(id: "calendars", title: "Calendars", neededFor: "Reading your calendar aloud (Apple Calendar)",
                            link: .calendars, status: calendars()),
-            PermissionItem(id: "reminders", title: "Reminders", neededFor: "Adding reminders by voice",
+            PermissionItem(id: "reminders", title: "Reminders", neededFor: "Tasks and reminders by voice (Apple Reminders)",
                            link: .reminders, status: reminders()),
             PermissionItem(id: "notifications", title: "Notifications", neededFor: "Timers and alarms, if the app isn't running when they're due",
                            link: .notifications, status: await notifications()),
