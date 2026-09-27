@@ -6,7 +6,7 @@ import SwiftUI
 
 /// The panes, in sidebar order.
 private enum SettingsPane: String, CaseIterable, Identifiable {
-    case activation, model, capabilities, routines, clock, calendar, messages, files, spotify, permissions, display
+    case activation, model, capabilities, routines, clock, calendar, messages, recording, files, spotify, permissions, display
 
     var id: Self { self }
 
@@ -19,6 +19,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .clock: "Clock"
         case .calendar: "Calendar"
         case .messages: "Messages & Email"
+        case .recording: "Recording"
         case .files: "Files"
         case .spotify: "Spotify"
         case .permissions: "Permissions"
@@ -35,6 +36,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .clock: "alarm"
         case .calendar: "calendar"
         case .messages: "message"
+        case .recording: "record.circle"
         case .files: "folder"
         case .spotify: "music.note"
         case .permissions: "lock.shield"
@@ -73,6 +75,7 @@ struct SettingsView: View {
         case .clock: ClockPane(status: status)
         case .calendar: CalendarPane()
         case .messages: MessagesPane()
+        case .recording: RecordingPane()
         case .files: FilesPane()
         case .spotify: SpotifyPane()
         case .permissions: PermissionsPane()
@@ -813,5 +816,44 @@ private struct AlarmEditor: View {
             ClockStore.shared.updateAlarm(draft.id, hour: clock.hour ?? 7, minute: clock.minute ?? 0, label: label, days: draft.days)
         }
         done()
+    }
+}
+
+private struct RecordingPane: View {
+    @AppStorage(CaptureSettings.saveAudioKey) private var saveAudio = false
+    @AppStorage(CaptureSettings.includeOthersKey) private var includeOthers = false
+    @AppStorage(AppDelegate.pauseDuringCallsKey) private var pauseDuringCalls = true
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Keep the audio as well as the transcript", isOn: $saveAudio)
+                Toggle("Include the other side of calls", isOn: $includeOthers)
+                HStack {
+                    Text("Transcripts are saved in Documents › Alfred Transcripts").font(.callout).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Open Folder") {
+                        try? FileManager.default.createDirectory(at: CaptureSettings.folder, withIntermediateDirectories: true)
+                        NSWorkspace.shared.open(CaptureSettings.folder)
+                    }
+                }
+            } header: {
+                Text("Transcripts")
+            } footer: {
+                Text("Say “start transcribing” (or use the menu bar) to record a meeting or call; click the notch or say “Alfred, stop” to finish, then “summarise the meeting” for key points and to-dos in Notes. The other side of calls comes from the Mac's own audio and needs the Screen & System Audio Recording permission; lines are then labelled Me and Others. Recording only ever starts when you ask, and the notch shows a red dot throughout. Tell people you're recording.")
+            }
+            Section {
+                Toggle("Stop listening for “Alfred” during calls", isOn: $pauseDuringCalls)
+            } header: {
+                Text("Calls")
+            } footer: {
+                Text("While another app uses the microphone (FaceTime, Zoom, Teams, a browser call, a phone call through your iPhone), Alfred doesn't listen. ⌥Space and the menu bar still work, so you can start a transcript during a call.")
+            }
+            Section("Dictation") {
+                Text("“Dictate” types into the text field you're in; “take dictation” writes into a new note. Say “comma”, “full stop”, “question mark”, “new line” (or “go to a new line”), “new paragraph”, “scratch that”, and “stop dictation”. Typing needs Accessibility.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
     }
 }

@@ -32,6 +32,18 @@ private struct StatusMenu: View {
         }
         ClockMenu(status: status)
         Divider()
+        // Recording during a call starts here or with ⌥Space: the wake word
+        // is paused while another app uses the microphone.
+        if status.capture != nil {
+            Button("Stop Recording") { status.onStopCapture?() }
+        } else {
+            Button("Transcribe This Meeting or Call") { Task { _ = try? await LiveCapture.shared.startTranscript() } }
+            Button("Dictate into Notes") { Task { try? await LiveCapture.shared.startDictation(toNotes: true) } }
+        }
+        if let call = status.callApp {
+            Text("\(call) is using the microphone: not listening for “Alfred”")
+        }
+        Divider()
         Text("Hold ⌥Space and speak")
         // Kill switch (spec §10): suspends all activation immediately.
         Toggle("Pause Listening", isOn: $status.isPaused)

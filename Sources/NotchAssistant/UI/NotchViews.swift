@@ -16,10 +16,13 @@ struct NotchLeadingView: View {
     let status: StatusModel
 
     var body: some View {
-        if status.state == .idle, let countdown = status.notchCountdown {
-            Image(systemName: countdown.symbol)
+        if status.state == .idle, let pill = status.idlePill {
+            Image(systemName: pill.symbol)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.orange)
+                .foregroundStyle(pill.tint)
+                .symbolEffect(.pulse, options: .repeating, isActive: status.capture != nil)
+                .contentShape(.rect)
+                .onTapGesture { if status.capture != nil { status.onStopCapture?() } }
         } else {
             StateGlyph(state: status.state)
                 .font(.system(size: 13, weight: .semibold))
@@ -39,12 +42,14 @@ struct NotchTrailingView: View {
             case .thinking, .acting:
                 Shimmer()
             case .idle:
-                if let countdown = status.notchCountdown {
-                    Text(countdown.text)
+                if let pill = status.idlePill {
+                    Text(pill.text)
                         .font(.system(size: 13, weight: .semibold))
                         .monospacedDigit()
-                        .contentTransition(.numericText(countsDown: true))
-                        .animation(.default, value: countdown.text)
+                        .contentTransition(.numericText(countsDown: status.capture == nil))
+                        .animation(.default, value: pill.text)
+                        .contentShape(.rect)
+                        .onTapGesture { if status.capture != nil { status.onStopCapture?() } }
                 }
             default:
                 EmptyView()
@@ -61,6 +66,9 @@ struct NotchExpandedView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if status.state == .idle {
+                if let capture = status.capture {
+                    CaptureRow(capture: capture, now: status.now) { status.onStopCapture?() }
+                }
                 ClockList(status: status)
             } else {
                 row
@@ -324,5 +332,41 @@ private struct ClockList: View {
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 3)
+    }
+}
+
+/// Recording or dictation, with the latest words and a Stop button.
+private struct CaptureRow: View {
+    let capture: CaptureStatus
+    let now: Date
+    let stop: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: capture.kind == .transcript ? "record.circle.fill" : "text.bubble.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.red)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 13, weight: .semibold))
+                Text(capture.lastLine.isEmpty ? "Listening…" : "…" + capture.lastLine)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
+            Spacer(minLength: 8)
+            Button("Stop", action: stop)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var title: String {
+        let elapsed = ClockFormat.clock(now.timeIntervalSince(capture.started))
+        switch capture.kind {
+        case .transcript: return "Recording · \(elapsed)"
+        case .dictation(let toNotes): return (toNotes ? "Dictating into Notes · " : "Dictating · ") + elapsed
+        }
     }
 }

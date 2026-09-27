@@ -1,6 +1,7 @@
 import Foundation
 import NotchAssistantCore
 import Observation
+import SwiftUI
 
 /// Observable state shared by the notch views and the menu bar. Written only
 /// by `NotchController`; views never decide state.
@@ -50,6 +51,14 @@ final class StatusModel {
     var clock = ClockSnapshot() {
         didSet { updateTicker() }
     }
+    /// Recording or dictation in progress.
+    var capture: CaptureStatus? {
+        didSet { updateTicker() }
+    }
+    /// The app on a call (using the microphone), while the wake word waits.
+    var callApp: String?
+    /// Clicking the notch (or Stop) while recording or dictating.
+    @ObservationIgnored var onStopCapture: (() -> Void)?
     /// Advances every second while a timer or the stopwatch runs, so the
     /// menu bar counts down; no ticking otherwise.
     private(set) var now = Date()
@@ -57,7 +66,7 @@ final class StatusModel {
 
     private func updateTicker() {
         now = Date()
-        guard clock.isTicking else {
+        guard clock.isTicking || capture != nil else {
             ticker?.invalidate()
             ticker = nil
             return
@@ -72,6 +81,16 @@ final class StatusModel {
     }
 
     static let notchCountdownKey = "clock.showInNotch"
+
+    /// The small pill beside the notch while idle: recording first, else a
+    /// running timer.
+    var idlePill: (symbol: String, tint: Color, text: String)? {
+        if let capture {
+            let elapsed = ClockFormat.clock(now.timeIntervalSince(capture.started))
+            return capture.kind == .transcript ? ("record.circle.fill", .red, elapsed) : ("text.bubble.fill", .red, elapsed)
+        }
+        return notchCountdown.map { ($0.symbol, .orange, $0.text) }
+    }
 
     /// The countdown pill beside the notch while idle: the soonest running
     /// timer, else a running stopwatch.

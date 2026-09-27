@@ -385,6 +385,8 @@ Every tool conforms to `AssistantTool`: a name, a description the model reads, a
 | `call` | `person`, `via` | Yes | Contacts | n/a — confirmed first | after v3 |
 | `sendMessage` | `person`, `text`, `app` | Yes | Contacts, Automation (Messages) | n/a — confirmed first | after v3 |
 | `email` | `person`, `subject?`, `body`, `account` | Yes | Contacts | n/a — draft; Gmail send confirmed | after v3 |
+| `transcribe` | `action` | No | Microphone (+ Screen & System Audio Recording for calls) | n/a | after v3 |
+| `dictate` | `target` | No | Accessibility (typing) or Automation (Notes) | n/a | after v3 |
 | `currentTime` | `what`, `place?` | Only for a place | None | n/a | after v3 |
 | `calendar` | `action`, `when?` | Google/Outlook only | Calendar | n/a — read-only | after v3 |
 | `calendarEvent` | `action`, `title?`, `when?`, `newWhen?`, `duration?` | Google only | Calendar | Undo for add and move; delete confirmed | after v3 |
@@ -535,6 +537,30 @@ Adds, moves and deletes events in Apple Calendar or Google. Outlook stays read-o
 - **Subject:** from "about …", else the first sentence.
 
 A lone "send it" with nothing pending replies that nothing is waiting.
+
+### Transcription and dictation (`LiveCapture`)
+
+**Engine.** Long-running, on-device recognition with Apple's `DictationTranscriber`, one per audio source, fed through `SpeechAnalyzer`. For transcripts it punctuates automatically; for dictation it doesn't, so spoken punctuation decides. Contact names prime it.
+
+**Transcripts:**
+- **Starting:** "start transcribing", "record this meeting", or the menu bar.
+- **Where it goes:** `Documents/Alfred Transcripts/<date> Transcript.txt`, with a timestamp per finished sentence.
+- **Settings:** keep the audio as `.m4a`, and include the other side of calls. The latter captures the Mac's own audio with ScreenCaptureKit (Screen & System Audio Recording permission) into a second recogniser, and lines are labelled Me and Others.
+- **Stopping:** "Alfred, stop" or "stop recording" said during the recording, a click on the notch, its Stop button, Escape, the menu bar, or after 3 hours.
+- **Summaries:** "summarise the meeting" summarises the latest transcript with the on-device model. It works in 5,000-character parts, then merges them (`MeetingNotes`: key points and to-dos; nothing invented), and saves a note.
+
+**Dictation:**
+- **Where it goes:** "dictate" types into the focused text field, through Accessibility (`kAXSelectedTextAttribute`), or pastes and restores the clipboard where an app doesn't allow that. "Take dictation" writes a new note, updating it after each sentence.
+- **Spoken commands (`DictationFormatter`):**
+  - punctuation words;
+  - "new line", "go to a new line" and "next line"; "new paragraph";
+  - "scratch that", which removes what came after the last full stop, else the previous stretch of speech;
+  - "stop dictation".
+- **Formatting:** capitals after sentence ends, and spacing.
+
+**While recording.** The notch shows a pulsing red dot and the elapsed time next to it, and hovering shows the latest words. The wake word is paused (one microphone job at a time).
+
+**Calls.** Every 2 s while the wake word is on, Alfred checks CoreAudio's process list for another *app* recording (`kAudioProcessPropertyIsRunningInput`; background services such as Siri don't count). While one is, the wake word is paused. ⌥Space and the menu bar still work, so a call can be transcribed on request. Recording never starts by itself.
 
 ### Tasks
 
@@ -901,7 +927,7 @@ Four features, built in this order. The decisions are the owner's.
 - **Email:** a prefilled draft in Gmail or Outlook on the web by default. "Send it" sends Gmail through the API with a `gmail.send` permission. The university Outlook account allows drafts only.
 - **Nothing is ever sent without a shown draft and a "yes".**
 
-**3. Transcription and dictation.**
+**3. Transcription and dictation.** *Built 27 Sep 2026 (§9: Transcription and dictation).*
 - **Recording:** "start transcribing" records until "stop" or a click on the notch, which shows a red dot and the elapsed time. It saves a timestamped transcript; saving audio is a Settings toggle, off by default. It can summarise into Notes.
 - **Dictation:** into Notes or the focused text field, with spoken punctuation and "new line" / "go to a new line".
 - **Calls:** recording only ever starts when asked. While another app uses the microphone (a call), Alfred stops listening entirely; recording a call starts from ⌥Space or the menu bar.
@@ -943,7 +969,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 310 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 315 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist

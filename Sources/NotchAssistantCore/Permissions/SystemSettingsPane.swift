@@ -12,6 +12,7 @@ public enum SystemSettingsPane: String, Sendable, Equatable, CaseIterable {
     case reminders = "Privacy_Reminders"
     case calendars = "Privacy_Calendars"
     case contacts = "Privacy_Contacts"
+    case screenRecording = "Privacy_ScreenCapture"
     case appleIntelligence
     case notifications
 

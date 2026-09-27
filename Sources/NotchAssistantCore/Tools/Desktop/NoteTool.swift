@@ -63,6 +63,12 @@ struct NoteTool: AssistantTool {
         }
     }
 
+    /// A note's HTML: a bold title, then one line per line of text.
+    static func body(title: String, text: String) -> String {
+        let lines = text.components(separatedBy: "\n").map { $0.isEmpty ? "<div><br></div>" : "<div>\(html($0))</div>" }
+        return "<div><b>\(html(title))</b></div>" + lines.joined()
+    }
+
     static func html(_ text: String) -> String {
         text.replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")

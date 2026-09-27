@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var wakeTask: Task<Void, Never>?
     private let clockNotifier = SystemClockNotifier()
     static let gesturesKey = "gesture.enabled"
+    static let pauseDuringCallsKey = "wake.pauseDuringCalls"
+    private var callWatch: Timer?
     private var gestures: GestureListener?
 
     func showSettings() {
@@ -58,8 +60,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.notch = notch
         self.coordinator = coordinator
 
-        notch.onChange = { [hotkey] state in
-            hotkey.setCancelKeyEnabled(state != .idle)
+        notch.onChange = { [hotkey, status] state in
+            hotkey.setCancelKeyEnabled(state != .idle || status.capture != nil)
         }
         display.onChange = { [weak self] in self?.environmentChanged() }
         let power = PowerProfileMonitor()
@@ -109,10 +111,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             notch.render(.error(AssistantFailure(error)))
         }
-        listener = Task { [hotkey] in
+        listener = Task { [hotkey, status] in
             for await event in hotkey.events {
+                // Escape while idle and recording: stop the recording.
+                if event == .cancelled, await coordinator.currentState == .idle, status.capture != nil {
+                    await LiveCapture.shared.stop()
+                    continue
+                }
                 await coordinator.handle(event)
             }
+        }
+        status.onStopCapture = { Task { await LiveCapture.shared.stop() } }
+        Task {
+            await LiveCapture.shared.setObserver { [weak self] capture in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.status.capture = capture
+                    self.notch?.clockChanged()
+                    self.hotkey.setCancelKeyEnabled(capture != nil || self.status.state != .idle)
+                    self.updateWakeWord()
+                }
+            }
+        }
+        // A call (another app using the microphone) pauses the wake word.
+        callWatch = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.checkForCall() }
         }
         environmentChanged()
         Task { [weak self] in
@@ -244,6 +267,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Starts or stops hands-free listening from the setting, the power
     /// profile (spec §11) and the kill switch.
+    /// Only while the wake word is on: a call starting or ending.
+    private func checkForCall() {
+        let watching = UserDefaults.standard.bool(forKey: "wake.enabled")
+            && (UserDefaults.standard.object(forKey: Self.pauseDuringCallsKey) as? Bool ?? true)
+        let app = watching ? MicrophoneUsage.appsRecording().first : nil
+        guard app != status.callApp else { return }
+        status.callApp = app
+        Log.app.notice("call: \(app ?? "ended", privacy: .public)")
+        updateWakeWord()
+    }
+
     private func updateWakeWord() {
         guard let power else { return }
         let enabled = UserDefaults.standard.bool(forKey: "wake.enabled")
@@ -251,6 +285,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             nil
         } else if status.isPaused {
             "listening is paused"
+        } else if let capture = status.capture {
+            capture.kind == .transcript ? "recording" : "taking dictation"
+        } else if let call = status.callApp {
+            "\(call) is using the microphone"
         } else if status.isSuspendedByDisplay {
             "no built-in display"
         } else if PowerProfileMonitor.autoSwitch {

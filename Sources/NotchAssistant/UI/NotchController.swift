@@ -118,7 +118,7 @@ final class NotchController: NotchPresenter {
             // Idle with a running timer: a small countdown beside the notch,
             // expanding to the list of timers while hovered. Only on a real
             // notch; the floating fallback has no compact form.
-            guard status.notchCountdown != nil, let screen = display.targetScreen else { return .hidden }
+            guard status.idlePill != nil, let screen = display.targetScreen else { return .hidden }
             return Presentation(mode: notch.isHovering ? .expanded : .compact, displayID: screen.displayID)
         }
 
