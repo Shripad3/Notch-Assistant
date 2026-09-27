@@ -490,7 +490,7 @@ Google and Outlook sign in with `OAuthSession`, which is shared: Authorization C
 
 - **`arrangeWindow`** moves the front window, or a named app's, through Accessibility: left, right, top or bottom half, maximise, centre, full screen (and out), minimise, or the same relative place on the other display. Frames are computed in AppKit coordinates within the screen's visible area (menu bar and Dock excluded) and flipped to Accessibility's top-left origin. It never closes or quits anything. "Left" and "right" alone need a window verb ("put", "move", "snap") or the word "window", so "what's on the left" is not a window command.
 - **`clipboard`** says what's on the clipboard (text, file names or "an image"), clears it, or strips its formatting and optionally pastes (⌘V, Accessibility). It never reads out items a password manager marked private (the nspasteboard.org `ConcealedType` / `TransientType`).
-- **`takeNote`** creates a new note in the Notes app: "note that …", "take a note: …", "jot down …". The note's words must have been said. It never edits or deletes existing notes.
+- **`takeNote`** creates a new note in the Notes app and shows it: "note that …", "take a note: …", "jot down …", "open Notes and type …", "add … to my notes". It opens Notes first, in front, because a cold launch (with iCloud syncing) is most of the wait, and scripting a closed app puts no time limit on its launch. These phrasings, including an "and" inside the note, are matched without the model. The note's words must have been said. It never edits or deletes existing notes.
 
 ### Routines
 

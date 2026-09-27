@@ -74,6 +74,11 @@ struct ClipboardAndNoteTests {
         ("Make a note saying call the plumber on Monday", "call the plumber on Monday"),
         ("jot down 42 is the answer", "42 is the answer"),
         ("write down pick up the dry cleaning", "pick up the dry cleaning"),
+        ("Open Notes and type hello world", "hello world"),
+        ("open notes app and type hello world", "hello world"),
+        ("add eggs and flour to my notes", "eggs and flour"),
+        ("type call the bank in Notes", "call the bank"),
+        ("note that I need bread and milk", "I need bread and milk"),
     ])
     func notes(said: String, text: String) {
         #expect(DirectCommand(said).flatMap { NoteTool().directArguments(for: $0) }?.text == text)
@@ -91,6 +96,8 @@ struct ClipboardAndNoteTests {
     @Test(arguments: [
         ("put Safari on the left half", "arrangeWindow"),
         ("note that the meeting moved to 3", "takeNote"),
+        ("Open Notes and type hello world", "takeNote"),
+        ("note that I need bread and milk", "takeNote"),
         ("what's on my clipboard", "clipboard"),
         ("move my latest screenshot to documents", "organiseFiles"),
         ("open notes", "openApp"),

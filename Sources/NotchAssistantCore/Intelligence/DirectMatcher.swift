@@ -63,7 +63,12 @@ enum DirectMatcher {
     /// "and" that joins two commands, not "an hour and a half", "1 hour
     /// and 30 minutes" or a reminder's "bread and milk".
     static func isCompound(_ text: String) -> Bool {
-        if ["remind me ", "set a reminder ", "add a reminder "].contains(where: text.hasPrefix) { return false }
+        // Their "and" is part of what's said: "remind me to buy bread and
+        // milk", "note that I need eggs and flour", "open Notes and type …".
+        let whole = ["remind me ", "set a reminder ", "add a reminder ", "note that ", "note down ", "take a note ", "make a note ",
+                     "jot down ", "write down ", "note to self "]
+        if whole.contains(where: text.hasPrefix) { return false }
+        if text.range(of: #"^open (my |the )?notes( app)? and (type|write|add|put|note|jot) "#, options: .regularExpression) != nil { return false }
         var padded = " \(text) "
         for joined in [" and a half ", " and half "] {
             padded = padded.replacingOccurrences(of: joined, with: " ")
