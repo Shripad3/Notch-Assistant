@@ -32,10 +32,13 @@ public struct ToolResult: Sendable, Equatable, ExpressibleByStringInterpolation 
     /// asks it, then listens for the answer without the wake word and runs
     /// the command again with the answer added.
     public var followUp: String?
+    /// Put between the command and the answer: "email Sam" + "saying" + "…".
+    public var followUpJoin: String?
 
-    public static func ask(_ question: String) -> ToolResult {
+    public static func ask(_ question: String, join: String? = nil) -> ToolResult {
         var result = ToolResult(question)
         result.followUp = question
+        result.followUpJoin = join
         return result
     }
 

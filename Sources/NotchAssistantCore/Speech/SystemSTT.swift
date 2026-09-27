@@ -35,7 +35,9 @@ public actor SystemSTT: TranscriptionService {
         request.requiresOnDeviceRecognition = true
         request.shouldReportPartialResults = true
         request.addsPunctuation = false
-        request.contextualStrings = ["Alfred", "Hey Alfred"]
+        // Contact names help with names the recogniser doesn't know,
+        // including Indian names ("Shripad", "Aditya").
+        request.contextualStrings = ["Alfred", "Hey Alfred"] + ContactBook.shared.namesForRecognition()
         self.request = request
         latest = ""
         finalText = nil
@@ -156,8 +158,11 @@ public actor SystemSTT: TranscriptionService {
     }
 
     private func makeRecognizer() throws -> SFSpeechRecognizer {
-        if let recognizer { return recognizer }
-        for locale in [Locale.current, Locale(identifier: "en-US")] {
+        // The accent chosen in Settings (e.g. English (India)) applies to
+        // commands as well as the wake word.
+        let accent = UserDefaults.standard.string(forKey: SpeechWakeListener.localeKey).flatMap { $0.isEmpty ? nil : Locale(identifier: $0) }
+        if let recognizer, accent == nil || recognizer.locale.identifier == accent?.identifier { return recognizer }
+        for locale in [accent, Locale.current, Locale(identifier: "en-US")].compactMap({ $0 }) {
             if let candidate = SFSpeechRecognizer(locale: locale), candidate.supportsOnDeviceRecognition {
                 recognizer = candidate
                 return candidate

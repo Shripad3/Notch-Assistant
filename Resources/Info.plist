@@ -26,6 +26,8 @@
 	<string>Alfred reads your calendar aloud when you ask, such as what is on my calendar tomorrow. It never changes events.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Only when hand gestures are turned on: Alfred watches for an open palm (start listening) or a fist (cancel). Nothing is recorded or stored.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Alfred looks up the people you ask to call, text or email. Contacts stay on this Mac.</string>
 	<key>NSDesktopFolderUsageDescription</key>
 	<string>Notch Assistant finds and opens files here when you ask, by name and date only. It never reads what's inside them.</string>
 	<key>NSDocumentsFolderUsageDescription</key>

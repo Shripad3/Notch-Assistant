@@ -85,6 +85,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         status.onAlert = { snooze in Task { await coordinator.resolveAlert(snooze: snooze) } }
         status.onTestAlert = { kind in Task { await coordinator.ring(.test(kind)) } }
         LoginItem.enableOnFirstLaunch()
+        // Contact names help speech recognition; only if already allowed.
+        Task { await ContactBook.shared.load(ask: false) }
         ClockStore.shared.start(
             notifier: clockNotifier,
             onChange: { [status] snapshot in

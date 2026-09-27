@@ -1,5 +1,6 @@
 import ApplicationServices
 import AVFoundation
+import Contacts
 import EventKit
 import FoundationModels
 import Speech
@@ -33,10 +34,12 @@ public enum PermissionChecker {
         async let systemEvents = automation("com.apple.systemevents")
         async let shortcuts = automation("com.apple.shortcuts.events")
         async let notes = automation("com.apple.Notes")
+        async let messages = automation("com.apple.MobileSMS")
         let spotifyStatus = await spotify
         let systemEventsStatus = await systemEvents
         let shortcutsStatus = await shortcuts
         let notesStatus = await notes
+        let messagesStatus = await messages
         return [
             PermissionItem(id: "microphone", title: "Microphone", neededFor: "All voice input",
                            link: .microphone, status: capture(.audio)),
@@ -52,6 +55,10 @@ public enum PermissionChecker {
                            link: .automation, status: shortcutsStatus),
             PermissionItem(id: "automation.notes", title: "Automation: Notes", neededFor: "Quick notes by voice",
                            link: .automation, status: notesStatus),
+            PermissionItem(id: "automation.messages", title: "Automation: Messages", neededFor: "Sending texts after you say yes",
+                           link: .automation, status: messagesStatus),
+            PermissionItem(id: "contacts", title: "Contacts", neededFor: "Calling, texting and emailing people by name",
+                           link: .contacts, status: contacts()),
             PermissionItem(id: "calendars", title: "Calendars", neededFor: "Reading your calendar aloud (Apple Calendar)",
                            link: .calendars, status: calendars()),
             PermissionItem(id: "reminders", title: "Reminders", neededFor: "Tasks and reminders by voice (Apple Reminders)",
@@ -90,6 +97,14 @@ public enum PermissionChecker {
         switch AVCaptureDevice.authorizationStatus(for: type) {
         case .authorized: .granted
         case .notDetermined: .notRequested
+        default: .denied
+        }
+    }
+
+    private static func contacts() -> PermissionStatus {
+        switch CNContactStore.authorizationStatus(for: .contacts) {
+        case .authorized: .granted
+        case .notDetermined: .askedOnFirstUse
         default: .denied
         }
     }

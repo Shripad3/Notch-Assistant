@@ -11,6 +11,7 @@ public enum SystemSettingsPane: String, Sendable, Equatable, CaseIterable {
     case filesAndFolders = "Privacy_FilesAndFolders"
     case reminders = "Privacy_Reminders"
     case calendars = "Privacy_Calendars"
+    case contacts = "Privacy_Contacts"
     case appleIntelligence
     case notifications
 

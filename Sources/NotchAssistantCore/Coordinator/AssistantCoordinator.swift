@@ -272,7 +272,7 @@ public actor AssistantCoordinator {
             let items = outcomes.last?.items ?? []
             let text = outcomes.map(\.text).joined(separator: " · ")
             if let question = outcomes.last?.followUp {
-                followUpCommand = transcript
+                followUpCommand = [transcript, outcomes.last?.followUpJoin].compactMap { $0 }.joined(separator: " ")
                 await apply(.ask(question), session: id)
                 await presenter.finishedSpeaking()
                 guard id == session, case .question = state else { return }

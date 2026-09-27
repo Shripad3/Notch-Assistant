@@ -26,6 +26,9 @@ enum SmallTalk {
         table["good afternoon"] = "Good afternoon. What can I do for you?"
         table["good evening"] = "Good evening. What can I do for you?"
         table["good night"] = "Good night."
+        for sendIt in ["send it", "send", "send it now", "send that", "send the message", "send the email"] {
+            table[sendIt] = "There's nothing waiting to be sent."
+        }
         for question in ["how are you", "how are you doing", "how s it going", "how are things", "you ok", "are you ok"] {
             table[question] = "All running smoothly. What can I do for you?"
         }

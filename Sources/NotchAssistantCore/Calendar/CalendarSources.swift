@@ -122,8 +122,9 @@ struct GoogleCalendar: CalendarSource {
             service: "Google Calendar",
             authorizeURL: URL(string: "https://accounts.google.com/o/oauth2/v2/auth")!,
             tokenURL: URL(string: "https://oauth2.googleapis.com/token")!,
-            // Reading calendars; adding, moving and deleting events; tasks.
-            scopes: "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks",
+            // Reading calendars; adding, moving and deleting events; tasks;
+            // sending an email only after the user says "send it".
+            scopes: "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks https://www.googleapis.com/auth/gmail.send",
             tokenAccount: "calendar.google.token",
             redirectHost: "127.0.0.1",
             extraParameters: ["access_type": "offline", "prompt": "consent"],

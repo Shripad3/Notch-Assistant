@@ -382,6 +382,9 @@ Every tool conforms to `AssistantTool`: a name, a description the model reads, a
 | `stopwatch` | `action` | No | None | n/a | after v3 |
 | `reminder` | `task`, `when?` | Google Tasks only | Reminders | Undo | after v3 |
 | `tasks` | `action`, `task?` | Google Tasks only | Reminders | Undo for complete; delete confirmed | after v3 |
+| `call` | `person`, `via` | Yes | Contacts | n/a — confirmed first | after v3 |
+| `sendMessage` | `person`, `text`, `app` | Yes | Contacts, Automation (Messages) | n/a — confirmed first | after v3 |
+| `email` | `person`, `subject?`, `body`, `account` | Yes | Contacts | n/a — draft; Gmail send confirmed | after v3 |
 | `currentTime` | `what`, `place?` | Only for a place | None | n/a | after v3 |
 | `calendar` | `action`, `when?` | Google/Outlook only | Calendar | n/a — read-only | after v3 |
 | `calendarEvent` | `action`, `title?`, `when?`, `newWhen?`, `duration?` | Google only | Calendar | Undo for add and move; delete confirmed | after v3 |
@@ -505,6 +508,33 @@ Adds, moves and deletes events in Apple Calendar or Google. Outlook stays read-o
   - repeating events change one occurrence unless "all of them" is said;
   - events with other invitees are refused, since changing them would notify people.
 - **Google:** it asks for the `calendar.events` and `tasks` permissions in addition to read-only, so users who signed in before must sign in again.
+
+### Calls, messages and email
+
+**People (`ContactBook`).**
+- **Loading:** contacts are read from the Contacts app once permission is granted, and loaded at launch only if already allowed.
+- **Names a person answers to:** full, first and last name, nickname, company, and relations on the user's own card, mapped to what people say ("mother" → "Mum", "Amma", "Maa"; "brother" → "Bhaiya", "Anna"…).
+- **Matching:** exact names first. Otherwise a phonetic key that folds spellings recognisers and Indian names vary on:
+  - "sh"/"s", "th"/"t", "dh"/"d", "bh"/"b", "w"/"v", "ee"/"i", doubled letters and trailing "a";
+  - spaces, so "Sri pad" matches Shripad and "Adithya" matches Aditya.
+- **Several matches:** Alfred asks which one, and the answer is added to the name.
+- **Recognition:** contact names are given to the command recogniser as expected words, and the Accent setting (e.g. English (India)) now applies to commands as well as the wake word.
+- **The name must have been said** (grounding), so the model can't pick a person.
+
+**`call`:** a phone call through the iPhone (`tel:`, Calls from iPhone) or FaceTime video or audio. A mobile number is preferred. It always shows the person and number and waits for "yes".
+
+**`sendMessage`:**
+- **Messages:** iMessage, then SMS through the iPhone, sent by scripting Messages only after the text is shown and confirmed. If Messages refuses, the text is left typed in for the user.
+- **WhatsApp:** the chat opens with the text typed in (`whatsapp://send`), and the user presses Return. WhatsApp allows nothing more.
+- **Choosing:** the default app is a setting; "on WhatsApp" picks it for one message. The words must have been said.
+
+**`email`:**
+- **Draft:** a ready-made draft opens in Gmail or Outlook on the web (default in Settings; "from my uni account" picks Outlook).
+- **Sending:** with Gmail and the Google sign-in, "send it" then sends it through the Gmail API (`gmail.send`, the only mail permission asked for). The user closes the browser draft unsent.
+- **Outlook:** a university account can't grant apps mail access, so Outlook is draft only.
+- **Subject:** from "about …", else the first sentence.
+
+A lone "send it" with nothing pending replies that nothing is waiting.
 
 ### Tasks
 
@@ -864,7 +894,7 @@ Four features, built in this order. The decisions are the owner's.
   - Events with other invitees are not changed or deleted by voice, since that notifies people.
 - **Tasks:** a toggle between Apple Reminders and Google Tasks. Google Tasks keep dates only, so Alfred rings timed ones itself.
 
-**2. Calls, messages and email.**
+**2. Calls, messages and email.** *Built 27 Sep 2026 (§9: Calls, messages and email).*
 - **Contacts:** recipients are resolved from the Contacts app. The recogniser is given contact names, matching tolerates spelling variants of Indian names, and nicknames and relations ("Amma") are honoured. Ambiguity gives a pick list.
 - **Calls:** FaceTime, or phone calls through the iPhone.
 - **Texts:** iMessage or SMS through Messages. WhatsApp opens the chat with the text filled in; the user sends.
@@ -913,7 +943,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 300 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 310 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist

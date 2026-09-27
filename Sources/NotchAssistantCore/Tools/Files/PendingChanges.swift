@@ -51,7 +51,10 @@ enum PendingRenames {
 
 /// What the notch's Confirm button and a spoken "yes" do.
 public enum Confirmations {
-    public static let yesWords: Set<String> = ["yes", "yeah", "yep", "sure", "confirm", "do it", "go ahead", "ok", "okay", "yes please"]
+    public static let yesWords: Set<String> = [
+        "yes", "yeah", "yep", "sure", "confirm", "do it", "go ahead", "ok", "okay", "yes please",
+        "send", "send it", "send it now", "yes send it", "call", "call them", "yes call", "delete it", "yes delete it",
+    ]
     public static let noWords: Set<String> = ["no", "nope", "cancel", "don t", "stop", "never mind", "no thanks"]
 
     /// True for yes, false for no, nil when it's neither (a new command).

@@ -2,7 +2,7 @@ import Foundation
 import FoundationModels
 
 public enum ToolPermission: String, Sendable {
-    case none, files, automation, accessibility, reminders, calendar, varies
+    case none, files, automation, accessibility, reminders, calendar, contacts, varies
 }
 
 /// Spec §9 "Adding a tool later": there is no separate destructive flag.
