@@ -211,7 +211,7 @@ struct UndoFileChangeTool: AssistantTool {
     let symbol = "arrow.uturn.backward"
     let keywords: Set<String> = ["undo", "revert", "back"]
     let description = """
-        Undo the last file change (a rename, move, copy, trash or new folder). "undo that" → undo.
+        Undo the last change: a file rename, move, copy, trash or new folder, or a calendar event just added or moved. "undo that" → undo.
         """
     let requiresNetwork = false
     let permission = ToolPermission.files
@@ -224,12 +224,22 @@ struct UndoFileChangeTool: AssistantTool {
     }
 
     func target(of arguments: Arguments) -> String {
-        FileJournal.shared.lastUndoable?.summary ?? "Last change"
+        Self.newestIsRecentUndo ? (RecentUndo.current?.summary ?? "Last change") : (FileJournal.shared.lastUndoable?.summary ?? "Last change")
     }
 
     func execute(_ arguments: Arguments) async throws -> ToolResult {
+        // Whichever happened last: a file change or another undoable action.
+        if Self.newestIsRecentUndo, let recent = RecentUndo.take() {
+            return ToolResult(try await recent.undo())
+        }
         guard let last = FileJournal.shared.lastUndoable else { throw ToolError("There's nothing to undo") }
         return ToolResult(try FileOrganizer.live.undo(last.id))
+    }
+
+    private static var newestIsRecentUndo: Bool {
+        guard let recent = RecentUndo.current else { return false }
+        guard let file = FileJournal.shared.lastUndoable else { return true }
+        return recent.date > file.date
     }
 
     func directArguments(for command: DirectCommand) -> Arguments? {

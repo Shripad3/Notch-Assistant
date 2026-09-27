@@ -114,6 +114,7 @@ final class StatusModel {
         case .list: "list.bullet"
         case .confirm: "questionmark.circle.fill"
         case .alert: "alarm.fill"
+        case .question: "questionmark.bubble.fill"
         case .error: "exclamationmark.triangle.fill"
         }
     }
@@ -128,6 +129,7 @@ final class StatusModel {
         case .acting(let tool, let target): "\(tool.title): \(target)"
         case .result(let outcome), .reply(let outcome), .list(let outcome, _), .confirm(let outcome, _): outcome
         case .alert(let alert): alert.title
+        case .question(let question): question
         case .error(let failure): failure.message
         }
     }

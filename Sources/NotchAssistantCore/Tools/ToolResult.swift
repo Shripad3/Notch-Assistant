@@ -28,6 +28,16 @@ public struct ToolResult: Sendable, Equatable, ExpressibleByStringInterpolation 
     public var undoable: Bool
     /// An answer to a question (the weather): shown and spoken as a reply.
     public var isAnswer: Bool
+    /// Something the tool needs before it can act ("For when?"). Alfred
+    /// asks it, then listens for the answer without the wake word and runs
+    /// the command again with the answer added.
+    public var followUp: String?
+
+    public static func ask(_ question: String) -> ToolResult {
+        var result = ToolResult(question)
+        result.followUp = question
+        return result
+    }
 
     public init(_ text: String, items: [ResultItem] = [], confirmation: String? = nil, undoable: Bool = false, isAnswer: Bool = false) {
         self.text = text

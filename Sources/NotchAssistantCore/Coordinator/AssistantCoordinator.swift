@@ -27,6 +27,9 @@ public actor AssistantCoordinator {
     /// Alerts that came due while the notch was busy; shown once it's idle.
     private var queuedAlerts: [ClockAlert] = []
     private let clock: ClockStore
+    /// The command a question was asked about ("add lunch with Sam"): the
+    /// answer ("tomorrow at 1") is added to it.
+    private var followUpCommand: String?
     /// How long an alert rings before it counts as missed.
     static let ringFor: Duration = .seconds(60)
     private static let undoLabel = ToolLabel(name: "organiseFiles", title: "Files", symbol: "folder")
@@ -71,7 +74,7 @@ public actor AssistantCoordinator {
         var answering = false
         interruptedAlert = nil
         switch state {
-        case .confirm: answering = true
+        case .confirm, .question: answering = true
         case .alert(let alert):
             answering = true
             interruptedAlert = alert
@@ -80,10 +83,11 @@ public actor AssistantCoordinator {
         guard state == .idle || answering, !isSuspended || interruptedAlert != nil else { return }
         if !answering {
             pendingConfirmation = nil
+            followUpCommand = nil
             Confirmations.discard()
         }
         let now = ContinuousClock.now
-        if let lastTrigger, lastTrigger.duration(to: now) < .seconds(1) { return }
+        if !answering, let lastTrigger, lastTrigger.duration(to: now) < .seconds(1) { return }
         lastTrigger = now
         session += 1
         // Tokens from an earlier command can't be reused (spec §9).
@@ -164,6 +168,7 @@ public actor AssistantCoordinator {
     public func cancel() async {
         guard state != .idle else { return }
         pendingConfirmation = nil
+        followUpCommand = nil
         Confirmations.discard()
         work?.cancel()
         work = nil
@@ -208,6 +213,17 @@ public actor AssistantCoordinator {
             case nil:
                 break
             }
+        }
+
+        // The answer to Alfred's question completes the command it was
+        // asked about: "add lunch with Sam" + "tomorrow at 1".
+        if let command = followUpCommand {
+            followUpCommand = nil
+            if Confirmations.answer(in: transcript) == false || ["never mind", "forget it", "cancel that"].contains(AppNameMatcher.normalize(transcript)) {
+                await apply(.textOnly("Okay, never mind"), session: id)
+                return
+            }
+            transcript = command + " " + transcript
         }
 
         // A pending batch: "yes" applies it, "no" drops it, anything else is
@@ -255,6 +271,14 @@ public actor AssistantCoordinator {
             }
             let items = outcomes.last?.items ?? []
             let text = outcomes.map(\.text).joined(separator: " · ")
+            if let question = outcomes.last?.followUp {
+                followUpCommand = transcript
+                await apply(.ask(question), session: id)
+                await presenter.finishedSpeaking()
+                guard id == session, case .question = state else { return }
+                await activationBegan(wake: .followUp())
+                return
+            }
             if let token = outcomes.last?.confirmation {
                 pendingConfirmation = token
                 await apply(.needsConfirmation(text, items), session: id)
@@ -360,6 +384,8 @@ public actor AssistantCoordinator {
         case .list: delay = .seconds(10)
         case .error: delay = .seconds(5)
         case .alert: delay = Self.ringFor
+        // Normally replaced by listening at once; a fallback if it can't start.
+        case .question: delay = .seconds(10)
         default: return
         }
         dismissal = Task {

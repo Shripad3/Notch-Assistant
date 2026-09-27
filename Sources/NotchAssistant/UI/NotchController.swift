@@ -76,6 +76,10 @@ final class NotchController: NotchPresenter {
         status.receive(level: level)
     }
 
+    func finishedSpeaking() async {
+        await speaker.waitUntilDone()
+    }
+
     /// Screens or display settings changed. Moves a visible notch in place
     /// when it can, and otherwise re-presents it (spec §5).
     func environmentChanged() {
@@ -120,7 +124,7 @@ final class NotchController: NotchPresenter {
 
         if let screen = display.targetScreen {
             let mode: Mode = switch status.state {
-            case .result, .reply, .list, .confirm, .alert, .error: .expanded
+            case .result, .reply, .list, .confirm, .alert, .question, .error: .expanded
             default: notch.isHovering ? .expanded : .compact
             }
             return Presentation(mode: mode, displayID: screen.displayID)

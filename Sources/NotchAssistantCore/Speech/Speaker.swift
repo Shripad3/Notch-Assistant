@@ -90,6 +90,7 @@ public final class Speaker {
 
     private let synthesizer = AVSpeechSynthesizer()
     private var neuralTask: Task<Void, Never>?
+    private var neuralSpeaking = false
 
     public init() {}
 
@@ -111,6 +112,8 @@ public final class Speaker {
             text = failure.message
         case .reply(let answer) where mode != .never:
             text = answer
+        case .question(let question) where mode != .never:
+            text = question
         default:
             return
         }
@@ -121,9 +124,11 @@ public final class Speaker {
     public func say(_ text: String) {
         stop()
         if let neural = Self.neural, neural.isActive {
+            neuralSpeaking = true
             neuralTask = Task { [weak self] in
                 let spoke = await neural.speak(text)
                 if !spoke, !Task.isCancelled { self?.sayWithSystemVoice(text) }
+                self?.neuralSpeaking = false
             }
             return
         }
@@ -136,7 +141,19 @@ public final class Speaker {
         synthesizer.speak(utterance)
     }
 
+    /// Waits (at most 10 s) until nothing is being said, plus a moment for
+    /// the echo to fade.
+    public func waitUntilDone() async {
+        let deadline = ContinuousClock.now + .seconds(10)
+        try? await Task.sleep(for: .milliseconds(150))
+        while neuralSpeaking || synthesizer.isSpeaking, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        try? await Task.sleep(for: .milliseconds(250))
+    }
+
     public func stop() {
+        neuralSpeaking = false
         neuralTask?.cancel()
         neuralTask = nil
         Self.neural?.stop()

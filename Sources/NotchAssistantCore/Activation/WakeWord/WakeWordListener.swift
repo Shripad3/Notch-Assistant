@@ -15,11 +15,20 @@ public final class WakeContext: @unchecked Sendable, Equatable {
     /// True when the detector was itself a speech recognizer that
     /// transcribed the wake word: no second confirmation is needed.
     public let confirmed: Bool
+    /// Seconds to wait for speech to start (see `Endpointer`).
+    public private(set) var patience = Endpointer.noSpeechTimeout
 
     /// A hands-free start with no wake word (an open-palm gesture): no
     /// pre-roll, and the endpointer measures the room itself.
     public static func gesture() -> WakeContext {
         WakeContext(preroll: [], ambientFloor: .nan, score: 1, confirmed: true)
+    }
+
+    /// Listening for the answer to Alfred's own question ("For when?").
+    public static func followUp() -> WakeContext {
+        let context = WakeContext(preroll: [], ambientFloor: .nan, score: 1, confirmed: true)
+        context.patience = 6
+        return context
     }
 
     init(preroll: [AVAudioPCMBuffer], ambientFloor: Float, score: Float, confirmed: Bool = false) {

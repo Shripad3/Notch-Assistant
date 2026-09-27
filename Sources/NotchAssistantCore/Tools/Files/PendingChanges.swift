@@ -63,11 +63,16 @@ public enum Confirmations {
     }
 
     public static func confirm(_ token: String) async throws -> String {
+        if token.hasPrefix(PendingActions.prefix) {
+            guard let run = PendingActions.take(token) else { throw ToolError("That has expired; ask again") }
+            return try await run()
+        }
         guard let plan = PendingChanges.take(token) else { throw ToolError("That change has expired; ask again") }
         return try FileOrganizer.live.apply(plan) + " · say “undo” to reverse"
     }
 
     public static func discard() {
         PendingChanges.discard()
+        PendingActions.discard()
     }
 }

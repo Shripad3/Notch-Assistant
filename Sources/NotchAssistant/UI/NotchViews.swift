@@ -148,6 +148,7 @@ struct NotchExpandedView: View {
         case .acting(let tool, _): tool.title
         case .result(let outcome), .reply(let outcome), .list(let outcome, _), .confirm(let outcome, _): outcome
         case .alert(let alert): alert.title
+        case .question(let question): question
         case .error(let failure): failure.message
         }
     }
@@ -184,6 +185,8 @@ struct StateGlyph: View {
             Image(systemName: "list.bullet").foregroundStyle(.white)
         case .confirm:
             Image(systemName: "questionmark.circle.fill").foregroundStyle(.yellow)
+        case .question:
+            Image(systemName: "questionmark.bubble.fill").foregroundStyle(.white)
         case .alert(let alert):
             Image(systemName: alert.kind == .timer ? "timer" : "alarm.fill")
                 .foregroundStyle(.orange)

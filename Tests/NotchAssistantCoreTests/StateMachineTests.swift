@@ -90,3 +90,21 @@ struct ListStateTests {
         #expect(StateMachine.transition(from: .list("x", [item]), on: .dismiss) == .idle)
     }
 }
+
+struct FollowUpStateTests {
+    @Test func askingThenListening() {
+        #expect(StateMachine.transition(from: .acting(tool: ToolLabel(name: "a", title: "A", symbol: "a"), target: ""), on: .ask("For when?")) == .question("For when?"))
+        #expect(StateMachine.transition(from: .question("For when?"), on: .activation) == .listening(partial: ""))
+        #expect(StateMachine.transition(from: .question("For when?"), on: .dismiss) == .idle)
+        #expect(StateMachine.transition(from: .question("For when?"), on: .cancel) == .idle)
+    }
+
+    @Test func patienceIsLongerForAnswers() {
+        var endpointer = Endpointer(ambientFloor: -50, patience: 6)
+        var decision = Endpointer.Decision.listening
+        for _ in 0..<50 { decision = endpointer.feed(level: -70, duration: 0.1) } // 5 s of silence
+        #expect(decision == .listening)
+        for _ in 0..<11 { decision = endpointer.feed(level: -70, duration: 0.1) }
+        #expect(decision == .noSpeech)
+    }
+}

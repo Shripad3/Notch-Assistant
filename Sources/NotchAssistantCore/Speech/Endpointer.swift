@@ -26,14 +26,18 @@ public struct Endpointer: Sendable {
     /// make breathing count as speech.
     static let minimumFloor: Float = -60
 
+    /// Seconds without any speech before giving up: longer when answering
+    /// one of Alfred's questions, since people think first.
+    private let patience: Double
     private var floor: Float?
     private var calibrationLevels: [Float] = []
     private var elapsed = 0.0
     private var heardSpeech = false
     private var silence = 0.0
 
-    public init(ambientFloor: Float? = nil) {
+    public init(ambientFloor: Float? = nil, patience: Double = Endpointer.noSpeechTimeout) {
         floor = ambientFloor.map { max($0, Self.minimumFloor) }
+        self.patience = patience
     }
 
     /// Feed each audio buffer's level (dBFS) and duration in seconds.
@@ -58,7 +62,7 @@ public struct Endpointer: Sendable {
         }
 
         if heardSpeech, silence >= Self.trailingSilence { return .endOfSpeech }
-        if !heardSpeech, elapsed >= Self.noSpeechTimeout { return .noSpeech }
+        if !heardSpeech, elapsed >= patience { return .noSpeech }
         return .listening
     }
 }

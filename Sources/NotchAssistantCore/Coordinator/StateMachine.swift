@@ -16,6 +16,9 @@ public enum AssistantState: Sendable, Equatable {
     case confirm(String, [ResultItem])
     /// A timer or alarm going off, until stopped.
     case alert(ClockAlert)
+    /// Alfred asked something ("For when?") and is about to listen for the
+    /// answer.
+    case question(String)
     case error(AssistantFailure)
 }
 
@@ -38,6 +41,8 @@ public enum AssistantEvent: Sendable, Equatable {
     case dismiss
     /// A timer or alarm is due.
     case ring(ClockAlert)
+    /// A tool needs more before it can act.
+    case ask(String)
 }
 
 public enum StateMachine {
@@ -53,6 +58,10 @@ public enum StateMachine {
             .listening(partial: "")
         case (.idle, .ring(let alert)):
             .alert(alert)
+        case (.acting, .ask(let question)):
+            .question(question)
+        case (.question, .activation):
+            .listening(partial: "")
         case (.alert, .activation):
             // "Alfred, stop" / "Alfred, snooze": the sound stops as soon as
             // the user speaks.
@@ -85,7 +94,7 @@ public enum StateMachine {
              (.list, .failure(let failure)),
              (.confirm, .failure(let failure)):
             .error(failure)
-        case (.result, .dismiss), (.reply, .dismiss), (.list, .dismiss), (.confirm, .dismiss), (.error, .dismiss), (.alert, .dismiss):
+        case (.result, .dismiss), (.reply, .dismiss), (.list, .dismiss), (.confirm, .dismiss), (.error, .dismiss), (.alert, .dismiss), (.question, .dismiss):
             .idle
         case (.idle, .cancel):
             nil
