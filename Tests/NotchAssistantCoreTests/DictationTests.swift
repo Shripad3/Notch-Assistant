@@ -1,3 +1,4 @@
+import Foundation
 @testable import NotchAssistantCore
 import Testing
 
@@ -98,5 +99,53 @@ struct DictationFixTests {
     @Test(arguments: [("no facts", false), ("long day", false), ("None.", false), ("Has a presentation on Friday", true)])
     func junkMemories(text: String, kept: Bool) {
         #expect(Conversation.worthKeeping(text) == kept)
+    }
+}
+
+struct ScreenCaptureTests {
+    @Test(arguments: [
+        ("take a screenshot", "screen", nil as String?),
+        ("screenshot", "screen", nil),
+        ("take a screen shot of this window", "window", nil),
+        ("screenshot Safari", "window", "safari"),
+        ("take a screenshot of part of the screen", "selection", nil),
+        ("copy a screenshot", "clipboard", nil),
+        ("capture the screen", "screen", nil),
+    ])
+    func screenshots(said: String, target: String, app: String?) throws {
+        let args = try #require(DirectCommand(said).flatMap { ScreenshotTool().directArguments(for: $0) })
+        #expect(args.target == target)
+        #expect(args.app == app)
+    }
+
+    @Test(arguments: [
+        ("record my screen", "start", false, false),
+        ("record my screen with sound", "start", true, false),
+        ("record my screen with my voice", "start", false, true),
+        ("record the screen with audio", "start", true, true),
+        ("record part of the screen", "selection", false, false),
+        ("stop screen recording", "stop", false, false),
+    ])
+    func recordings(said: String, action: String, sound: Bool, voice: Bool) throws {
+        let args = try #require(DirectCommand(said).flatMap { ScreenRecordTool().directArguments(for: $0) })
+        #expect(args.action == action)
+        #expect((args.sound ?? false) == sound)
+        #expect((args.voice ?? false) == voice)
+    }
+
+    @Test(arguments: [
+        ("take a screenshot", "screenshot"),
+        ("record my screen", "recordScreen"),
+        ("record this meeting", "transcribe"),
+        ("open my latest screenshot", "openFile"),
+        ("start typing", "dictate"),
+    ])
+    func routes(said: String, tool: String) {
+        #expect(DirectMatcher.plan(for: said, tools: ToolRegistry.standard.tools)?.steps.first?.tool.name == tool)
+    }
+
+    @Test func fileNamesLikeMacOS() {
+        let date = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 28, hour: 10, minute: 15, second: 30))!
+        #expect(CaptureFolder.name("Screenshot", "png", date: date) == "Screenshot 2026-09-28 at 10.15.30.png")
     }
 }

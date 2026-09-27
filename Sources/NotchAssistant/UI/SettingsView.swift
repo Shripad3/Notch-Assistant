@@ -852,6 +852,10 @@ private struct RecordingPane: View {
             } footer: {
                 Text("While another app uses the microphone (FaceTime, Zoom, Teams, a browser call, a phone call through your iPhone), Alfred doesn't listen. ⌥Space and the menu bar still work, so you can start a transcript during a call.")
             }
+            Section("Screenshots and screen recording") {
+                Text("“Take a screenshot”, “screenshot this window”, “screenshot Safari”, “screenshot part of the screen”, “copy a screenshot”. “Record my screen” (add “with sound” and/or “with my voice”); click the notch or say “Alfred, stop recording” to finish. Files go where macOS saves your screenshots. Alfred leaves its own notch out, and needs the Screen & System Audio Recording permission.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
             Section("Dictation") {
                 Text("“Dictate” types into the text field you're in; “take dictation” writes into a new note. Say “comma”, “full stop”, “question mark”, “new line” (or “go to a new line”), “new paragraph”, “scratch that”, and “stop dictation”. Typing needs Accessibility.")
                     .font(.callout).foregroundStyle(.secondary)

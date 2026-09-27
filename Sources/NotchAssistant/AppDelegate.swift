@@ -285,7 +285,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             nil
         } else if status.isPaused {
             "listening is paused"
-        } else if let capture = status.capture {
+        } else if let capture = status.capture, capture.kind != .screen {
+            // A screen recording keeps listening, for "Alfred, stop recording".
             capture.kind == .transcript ? "recording" : "taking dictation"
         } else if let call = status.callApp {
             "\(call) is using the microphone"

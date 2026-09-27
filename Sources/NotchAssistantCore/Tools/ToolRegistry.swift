@@ -23,6 +23,9 @@ public struct ToolRegistry: Sendable {
         AnyAssistantTool(CallTool()),
         AnyAssistantTool(MessageTool()),
         AnyAssistantTool(EmailTool()),
+        // Before transcribing, whose "record this…" would take "record this screen".
+        AnyAssistantTool(ScreenshotTool()),
+        AnyAssistantTool(ScreenRecordTool()),
         AnyAssistantTool(TranscribeTool()),
         AnyAssistantTool(DictationTool()),
         AnyAssistantTool(MemoryTool()),

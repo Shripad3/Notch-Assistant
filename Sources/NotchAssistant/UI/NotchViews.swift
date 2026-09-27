@@ -367,6 +367,7 @@ private struct CaptureRow: View {
         switch capture.kind {
         case .transcript: return "Recording · \(elapsed)"
         case .dictation(let toNotes): return (toNotes ? "Dictating into Notes · " : "Dictating · ") + elapsed
+        case .screen: return "Recording the screen · \(elapsed)"
         }
     }
 }

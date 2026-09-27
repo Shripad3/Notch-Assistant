@@ -5,7 +5,7 @@ import Foundation
 /// What the notch and menu bar show while Alfred is recording or taking
 /// dictation.
 public struct CaptureStatus: Sendable, Equatable {
-    public enum Kind: Sendable, Equatable { case transcript, dictation(toNotes: Bool) }
+    public enum Kind: Sendable, Equatable { case transcript, dictation(toNotes: Bool), screen }
     public let kind: Kind
     public let started: Date
     /// The latest words, as they're recognised.
@@ -34,6 +34,8 @@ public actor LiveCapture {
 
     public private(set) var status: CaptureStatus?
     private var transcribers: [LiveTranscriber] = []
+    private var recorder: ScreenRecorder?
+    private var recordingURL: URL?
     private var file: FileHandle?
     private var fileURL: URL?
     private var formatter = DictationFormatter()
@@ -114,6 +116,20 @@ public actor LiveCapture {
         if stop { _ = await self.stop() }
     }
 
+    // MARK: Screen recording
+
+    /// Records the screen the pointer is on to a .mov where screenshots go.
+    public func startScreenRecording(sound: Bool, voice: Bool) async throws -> String {
+        guard status == nil else { throw ToolError("Alfred is already \(status?.kind == .transcript ? "recording" : "busy capturing")") }
+        let url = CaptureFolder.url.appending(path: CaptureFolder.name("Screen Recording", "mov"))
+        let recorder = ScreenRecorder()
+        try await recorder.start(to: url, sound: sound, voice: voice)
+        self.recorder = recorder
+        recordingURL = url
+        begin(.screen, at: Date())
+        return url.lastPathComponent
+    }
+
     // MARK: Dictation
 
     public func startDictation(toNotes: Bool) async throws {
@@ -192,6 +208,10 @@ public actor LiveCapture {
         let running = transcribers
         transcribers = []
         for transcriber in running { await transcriber.stop() }
+        if let recorder {
+            await recorder.stop()
+            self.recorder = nil
+        }
         onChange?(nil)
         let minutes = max(1, Int(Date().timeIntervalSince(current.started) / 60 + 0.5))
         switch current.kind {
@@ -203,6 +223,9 @@ public actor LiveCapture {
             return "Stopped after \(minutes) min. Saved \(name) in Documents › Alfred Transcripts. Say “summarise the meeting” for the key points"
         case .dictation(let toNotes):
             return toNotes ? "Dictation saved in Notes" : "Dictation stopped"
+        case .screen:
+            let name = recordingURL?.lastPathComponent ?? "the recording"
+            return "Stopped after \(minutes) min. Saved \(name) to \(CaptureFolder.placeName)"
         }
     }
 
@@ -259,23 +282,37 @@ public actor LiveCapture {
 /// Typing into whatever text field is focused in the front app.
 @MainActor
 enum FocusedText {
-    /// Inserts at the cursor through Accessibility; if the app doesn't
-    /// allow that, pastes (putting the clipboard back afterwards).
+    /// Types at the cursor as keystrokes, which every app accepts. (Setting
+    /// the text through Accessibility "succeeded" in WhatsApp without
+    /// inserting anything.) Line breaks are Shift+Return, so a chat app
+    /// starts a new line instead of sending.
     static func insert(_ text: String) async {
-        let system = AXUIElementCreateSystemWide()
-        var focused: CFTypeRef?
-        if AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success, let focused,
-           AXUIElementSetAttributeValue(focused as! AXUIElement, kAXSelectedTextAttribute as CFString, text as CFString) == .success {
-            return
+        let source = CGEventSource(stateID: .hidSystemState)
+        let lines = text.components(separatedBy: "\n")
+        for (index, line) in lines.enumerated() {
+            if index > 0 { shiftReturn(source) }
+            var units = Array(line.utf16)
+            while !units.isEmpty {
+                let chunk = Array(units.prefix(16))
+                units.removeFirst(chunk.count)
+                for down in [true, false] {
+                    let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: down)
+                    event?.flags = []
+                    chunk.withUnsafeBufferPointer { event?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: $0.baseAddress) }
+                    event?.post(tap: .cghidEventTap)
+                }
+                // Give slower apps time to take each chunk.
+                try? await Task.sleep(for: .milliseconds(8))
+            }
         }
-        let board = NSPasteboard.general
-        let saved = board.string(forType: .string)
-        board.clearContents()
-        board.setString(text, forType: .string)
-        SystemKeys.pasteShortcut()
-        try? await Task.sleep(for: .milliseconds(250))
-        board.clearContents()
-        if let saved { board.setString(saved, forType: .string) }
+    }
+
+    private static func shiftReturn(_ source: CGEventSource?) {
+        for down in [true, false] {
+            let event = CGEvent(keyboardEventSource: source, virtualKey: 0x24, keyDown: down)
+            event?.flags = .maskShift
+            event?.post(tap: .cghidEventTap)
+        }
     }
 
     /// True when a text field or text area of that app has the focus.

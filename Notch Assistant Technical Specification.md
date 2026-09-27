@@ -386,7 +386,9 @@ Every tool conforms to `AssistantTool`: a name, a description the model reads, a
 | `sendMessage` | `person`, `text`, `app` | Yes | Contacts, Automation (Messages) | n/a — confirmed first | after v3 |
 | `email` | `person`, `subject?`, `body`, `account` | Yes | Contacts | n/a — draft; Gmail send confirmed | after v3 |
 | `transcribe` | `action` | No | Microphone (+ Screen & System Audio Recording for calls) | n/a | after v3 |
-| `dictate` | `target` | No | Accessibility (typing) or Automation (Notes) | n/a | after v3 |
+| `dictate` | `target`, `text?` | No | Accessibility (typing) or Automation (Notes) | n/a | after v3 |
+| `screenshot` | `target`, `app?` | No | Screen & System Audio Recording | n/a | after v3 |
+| `recordScreen` | `action`, `sound?`, `voice?` | No | Screen & System Audio Recording, Microphone | n/a | after v3 |
 | `memory` | `action` | No | None | Forget-all confirmed | after v3 |
 | `currentTime` | `what`, `place?` | Only for a place | None | n/a | after v3 |
 | `calendar` | `action`, `when?` | Google/Outlook only | Calendar | n/a — read-only | after v3 |
@@ -539,6 +541,21 @@ Adds, moves and deletes events in Apple Calendar or Google. Outlook stays read-o
 
 A lone "send it" with nothing pending replies that nothing is waiting.
 
+### Screenshots and screen recording
+
+Both use ScreenCaptureKit rather than `screencapture` (no shell), and always exclude Alfred's own windows, so the notch never appears in a capture.
+
+- **Screenshots:**
+  - the display under the pointer;
+  - the front window, or a named app's front window, chosen in the window server's front-to-back order;
+  - a copy to the clipboard.
+- **Area screenshots or recordings:** macOS's own tools, by pressing ⌘⇧4 or ⌘⇧5.
+- **Where files go:** the folder macOS saves screenshots to (`com.apple.screencapture` `location`, else the Desktop), with macOS's naming.
+- **Screen recordings:**
+  - an `SCRecordingOutput` to `.mov` (H.264, 30 fps, the pointer shown);
+  - the Mac's sound and the microphone only when asked ("with sound", "with my voice", "with audio" for both). Model-supplied flags are checked against what was said.
+- **Stopping:** a recording is a `LiveCapture` like transcripts, so the red dot, click-to-stop, Escape and "stop recording" all apply. Unlike transcripts, the wake word stays on, so "Alfred, stop recording" works.
+
 ### Conversation and memory
 
 **Routing.**
@@ -577,7 +594,7 @@ A lone "send it" with nothing pending replies that nothing is waiting.
 - **Summaries:** "summarise the meeting" summarises the latest transcript with the on-device model. It works in 5,000-character parts, then merges them (`MeetingNotes`: key points and to-dos; nothing invented), and saves a note.
 
 **Dictation:**
-- **Where it goes:** "dictate" types into the focused text field, through Accessibility (`kAXSelectedTextAttribute`), or pastes and restores the clipboard where an app doesn't allow that. "Take dictation" writes a new note, updating it after each sentence.
+- **Where it goes:** "dictate" types into the focused text field. "Take dictation" writes a new note, updating it after each sentence.
 - **Spoken commands (`DictationFormatter`):**
   - punctuation words;
   - "new line", "go to a new line" and "next line"; "new paragraph";
@@ -585,6 +602,7 @@ A lone "send it" with nothing pending replies that nothing is waiting.
   - "stop dictation".
 - **Formatting:** capitals after sentence ends, and spacing. Line breaks the recogniser makes itself (it can turn "new line" into one) are kept.
 - **Phrasings:** "start typing" and "type" start dictation; "type <words>" types just those words.
+- **Typing method:** keystrokes (`CGEvent` Unicode strings), which every app accepts. Setting text through Accessibility "succeeded" in WhatsApp without inserting anything. Line breaks are Shift+Return, so chat apps start a new line instead of sending.
 - **Stopping:** "stop" or "that's all" said with ⌥Space while recording or dictating stops it, not the music.
 - **Hint:** it's shown the first time only.
 - **Dictating into Notes:** it types straight into the new note when Notes gives it focus, which is fast. Otherwise it rewrites the note after each sentence through AppleScript.
@@ -1004,7 +1022,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 330 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 335 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist
