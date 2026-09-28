@@ -8,18 +8,7 @@ public struct FoundationModelsEngine: AssistantEngine {
     }
 
     public func unavailableReason() -> AssistantFailure? {
-        switch SystemLanguageModel.default.availability {
-        case .available:
-            nil
-        case .unavailable(.appleIntelligenceNotEnabled):
-            AssistantFailure("Apple Intelligence is off, or the Mac and Siri languages don't match", link: .appleIntelligence)
-        case .unavailable(.modelNotReady):
-            AssistantFailure("The on-device model is still downloading", link: .appleIntelligence)
-        case .unavailable(.deviceNotEligible):
-            AssistantFailure("This Mac can't run Apple Intelligence")
-        case .unavailable:
-            AssistantFailure("The on-device model is unavailable", link: .appleIntelligence)
-        }
+        ModelRouter.backend(for: .intent).unavailableReason
     }
 
     public func plan(for transcript: String, tools: [AnyAssistantTool]) async throws -> Plan {
@@ -45,17 +34,13 @@ public struct FoundationModelsEngine: AssistantEngine {
         Log.intelligence.notice("model sees: \(tools.map(\.name).joined(separator: ", "), privacy: .public)")
         let schema = try PlanSchema.make(for: tools)
         let content: GeneratedContent
+        let backend = ModelRouter.backend(for: .intent)
         do {
             content = try await withTimeout(timeout) {
                 // One activation, one session: nothing carries over (spec §8).
-                let session = LanguageModelSession(instructions: Prompt.instructions)
-                return try await session.respond(
-                    to: transcript,
-                    schema: schema,
-                    options: GenerationOptions(sampling: .greedy)
-                ).content
+                try await backend.respond(system: Prompt.instructions, prompt: transcript, schema: schema, deterministic: true)
             }
-        } catch let error as LanguageModelSession.GenerationError {
+        } catch let error as ModelError {
             throw Self.failure(for: error)
         }
         Log.intelligence.notice("plan for \"\(transcript, privacy: .public)\": \(content.jsonString, privacy: .public)")
@@ -79,19 +64,8 @@ public struct FoundationModelsEngine: AssistantEngine {
         transcript.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
     }
 
-    private static func failure(for error: LanguageModelSession.GenerationError) -> AssistantFailure {
-        switch error {
-        case .exceededContextWindowSize:
-            AssistantFailure("That command was too long")
-        case .assetsUnavailable:
-            AssistantFailure("The on-device model is unavailable", link: .appleIntelligence)
-        case .guardrailViolation, .refusal:
-            AssistantFailure("The model declined that request")
-        case .unsupportedLanguageOrLocale:
-            AssistantFailure("The on-device model doesn't support this language")
-        default:
-            AssistantFailure("The model couldn't make sense of that")
-        }
+    private static func failure(for error: ModelError) -> AssistantFailure {
+        error == .contextOverflow ? AssistantFailure("That command was too long") : error.failure
     }
 }
 

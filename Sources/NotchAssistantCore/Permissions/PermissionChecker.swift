@@ -74,13 +74,7 @@ public enum PermissionChecker {
 
     /// Nil when the on-device model is usable.
     public static func appleIntelligenceProblem() -> String? {
-        switch SystemLanguageModel.default.availability {
-        case .available: nil
-        case .unavailable(.appleIntelligenceNotEnabled): "Turned off, or the Mac and Siri languages don't match"
-        case .unavailable(.modelNotReady): "Model still downloading"
-        case .unavailable(.deviceNotEligible): "Not supported on this Mac"
-        case .unavailable: "Unavailable"
-        }
+        AppleFoundationBackend.statusProblem
     }
 
     private static func automation(_ bundleIdentifier: String) async -> PermissionStatus {

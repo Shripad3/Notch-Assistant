@@ -35,11 +35,15 @@ enum TranscriptSummarizer {
     }
 
     private static func ask(_ task: String, _ text: String) async throws -> MeetingNotes {
-        let session = LanguageModelSession(instructions: """
+        let system = """
             You write short meeting notes from a transcript. Use only what the transcript says; never invent names, \
             numbers or decisions. Write plain sentences without markdown.
-            """)
-        return try await session.respond(to: "\(task)\n\n\(text)", generating: MeetingNotes.self).content
+            """
+        do {
+            return try await ModelRouter.backend(for: .summarize).respond(system: system, prompt: "\(task)\n\n\(text)", generating: MeetingNotes.self)
+        } catch {
+            throw error.failure
+        }
     }
 }
 

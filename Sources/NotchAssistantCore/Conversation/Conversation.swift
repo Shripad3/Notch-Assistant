@@ -136,7 +136,7 @@ public actor Conversation {
     public static let enabledKey = "conversation.enabled"
     public static var isEnabled: Bool { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
 
-    private var session: LanguageModelSession?
+    private var session: (any ChatSession)?
     private var id = UUID()
     private var turns: [(user: String, alfred: String)] = []
     private let memory: MemoryStore
@@ -174,18 +174,20 @@ public actor Conversation {
             id = UUID()
             turns = []
             let memories = MemoryStore.isEnabled ? memory.relevant(to: text) : []
-            session = LanguageModelSession(instructions: Self.instructions(memories: memories))
+            session = ModelRouter.backend(for: .conversation).chat(system: Self.instructions(memories: memories))
         }
         guard let session else { throw ToolError("The conversation couldn't start") }
         let answer: String
         do {
-            answer = try await session.respond(to: text, options: GenerationOptions(temperature: 0.7)).content
-        } catch LanguageModelSession.GenerationError.exceededContextWindowSize {
+            answer = try await session.send(text, temperature: 0.7)
+        } catch .contextOverflow {
             // A long chat: start afresh, keeping what matters in memory.
             await end()
             return try await reply(to: text)
-        } catch LanguageModelSession.GenerationError.guardrailViolation, LanguageModelSession.GenerationError.refusal {
+        } catch .refused {
             return "I'd rather not get into that one. Is there something else I can help with?"
+        } catch {
+            throw error.failure
         }
         let clean = Self.spoken(answer)
         turns.append((text, clean))
@@ -201,11 +203,12 @@ public actor Conversation {
         turns = []
         guard MemoryStore.isEnabled, !finished.isEmpty else { return }
         let transcript = finished.map { "User: \($0.user)\nAlfred: \($0.alfred)" }.joined(separator: "\n")
-        let summarizer = LanguageModelSession(instructions: """
+        let system = """
             You keep a short memory of conversations between a user and their assistant, Alfred. \
             Write only what the user said or clearly meant; never invent details.
-            """)
-        guard let notes = try? await summarizer.respond(to: String(transcript.suffix(4_000)), generating: ConversationMemory.self).content else { return }
+            """
+        guard let notes = try? await ModelRouter.backend(for: .summarize)
+            .respond(system: system, prompt: String(transcript.suffix(4_000)), generating: ConversationMemory.self) else { return }
         if Self.worthKeeping(notes.summary) { memory.add(notes.summary, kind: .summary, conversation: conversation) }
         for fact in notes.facts where Self.worthKeeping(fact) { memory.add(fact, kind: .fact, conversation: conversation) }
     }
