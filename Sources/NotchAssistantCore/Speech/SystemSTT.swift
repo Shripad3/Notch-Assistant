@@ -43,18 +43,23 @@ public actor SystemSTT: TranscriptionService {
         finalText = nil
 
         let input = engine.inputNode
+        let processed = VoiceProcessing.prepare(input)
         let format = input.outputFormat(forBus: 0)
+        // With voice processing, one channel of processed voice, as the wake
+        // listener hands over its pre-roll in.
+        let heard = processed ? VoiceProcessing.voiceFormat(for: format) : format
         guard format.sampleRate > 0, format.channelCount > 0 else {
             throw AssistantFailure("No microphone input is available")
         }
         // The wake word and anything said just after it, recorded before
         // this engine started. Same device, so the same format; skipped if not.
-        for buffer in wake?.preroll ?? [] where buffer.format == format {
+        for buffer in wake?.preroll ?? [] where buffer.format == heard {
             request.append(buffer)
         }
         AudioDucker.duck()
         let sink = BufferSink(request, endpointer: wake.map { Endpointer(ambientFloor: $0.ambientFloor.isNaN ? nil : $0.ambientFloor, patience: $0.patience) })
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { tapped, _ in
+            guard let buffer = processed ? VoiceProcessing.voice(of: tapped) : tapped else { return }
             let decibels = Self.decibels(of: buffer)
             onUpdate(.level(Self.level(fromDecibels: decibels)))
             switch sink.append(buffer, decibels: decibels) {

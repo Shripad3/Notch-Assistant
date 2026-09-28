@@ -177,12 +177,14 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
 
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
+        // Hears "Alfred" over music playing from the Mac, and fans.
+        let processed = VoiceProcessing.prepare(inputNode)
         let micFormat = inputNode.outputFormat(forBus: 0)
         guard micFormat.sampleRate > 0, micFormat.channelCount > 0 else {
             throw AssistantFailure("No microphone input is available")
         }
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: micFormat) { [weak self] buffer, _ in
-            guard let self, let copy = buffer.copied() else { return }
+            guard let self, let copy = processed ? VoiceProcessing.voice(of: buffer) : buffer.copied() else { return }
             self.queue.async { self.ingest(copy, to: format, input: input) }
         }
         engine.prepare()

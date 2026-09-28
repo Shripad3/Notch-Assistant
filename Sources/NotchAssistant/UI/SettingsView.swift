@@ -202,6 +202,7 @@ private struct ActivationPane: View {
 private struct ModelPane: View {
     @AppStorage(SpokenResponses.defaultsKey) private var spoken = SpokenResponses.errorsOnly.rawValue
     @AppStorage("audio.duckWhileListening") private var duck = true
+    @AppStorage(VoiceProcessing.key) private var voiceProcessing = true
     @AppStorage(VoiceOption.defaultsKey) private var voiceID = ""
     @State private var voices = VoiceOption.available()
     @State private var preview = Speaker()
@@ -215,7 +216,13 @@ private struct ModelPane: View {
                 Text("The MLX backend needs macOS 27.")
             }
             Section {
+                Toggle("Filter out music and background noise", isOn: $voiceProcessing)
                 Toggle("Lower other audio while listening", isOn: $duck)
+            } footer: {
+                Text("The filter is the echo cancellation and noise suppression FaceTime uses: music or video playing from this Mac is removed from what Alfred hears, and fans and hum are reduced. It's used for “Alfred”, commands and dictation, not meeting transcripts. Takes effect the next time Alfred starts listening.")
+            }
+            Section {
+                EmptyView()
             } footer: {
                 Text("Turns the Mac's volume down while you hold the hotkey, so music doesn't drown out your command. It's restored as soon as you let go.")
             }

@@ -110,13 +110,14 @@ public final class WakeWordListener: WakeListening, @unchecked Sendable {
     public func start() throws {
         guard running.withLock({ let was = $0; $0 = true; return !was }) else { return }
         let input = engine.inputNode
+        let processed = VoiceProcessing.prepare(input)
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
             running.withLock { $0 = false }
             throw AssistantFailure("No microphone input is available")
         }
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
-            guard let self, let copy = buffer.copied() else { return }
+            guard let self, let copy = processed ? VoiceProcessing.voice(of: buffer) : buffer.copied() else { return }
             self.queue.async { self.ingest(copy) }
         }
         engine.prepare()

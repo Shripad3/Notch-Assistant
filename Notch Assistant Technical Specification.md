@@ -603,6 +603,15 @@ Both use ScreenCaptureKit rather than `screencapture` (no shell), and always exc
 - Organising still refuses to choose files by their contents.
 - `ContentRequests` now refuses requests to *edit* a file ("edit my essay", "fix the typo in …") instead of requests to read.
 
+### Listening in noise
+
+The microphone goes through Apple's voice processing (`setVoiceProcessingEnabled`) for the wake word, commands and dictation, but not for meeting transcripts, where it could drop other people's voices. It's a setting, on by default.
+
+- **What it does:** echo cancellation removes music or video playing from the Mac itself, and noise suppression reduces fans and hum.
+- **Ducking:** the system's own ducking of other audio is set to minimal. Alfred already lowers the volume while listening, when that's on.
+- **Channels:** with it on, the M4 Air's input becomes seven identical channels of processed voice (three raw microphone channels without it). Every tap takes channel 0 (`VoiceProcessing.voice(of:)`). The wake listener and the command recogniser use the same one-channel format, so the pre-roll ("Alfred, open Notes" in one breath) still carries over.
+- **Not solved:** another person saying "Alfred" still wakes it. Telling voices apart would need speaker enrolment.
+
 ### readScreen: understanding the screen
 
 "What's on my screen", "what does this error say", "read this to me", "what's this app asking me", "summarise this page".

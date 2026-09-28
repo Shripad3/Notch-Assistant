@@ -83,6 +83,9 @@ final class LiveTranscriber: @unchecked Sendable {
         case .microphone(let saveTo):
             let engine = AVAudioEngine()
             let node = engine.inputNode
+            // Dictation: yes (music and fans out). Transcripts: no, it could
+            // drop other people in the room.
+            let processed = VoiceProcessing.prepare(node, wanted: !punctuate && VoiceProcessing.isEnabled)
             let micFormat = node.outputFormat(forBus: 0)
             guard micFormat.sampleRate > 0, micFormat.channelCount > 0 else { throw AssistantFailure("No microphone input is available") }
             if let saveTo {
@@ -93,7 +96,7 @@ final class LiveTranscriber: @unchecked Sendable {
                 audioFile = try AVAudioFile(forWriting: saveTo, settings: settings, commonFormat: micFormat.commonFormat, interleaved: micFormat.isInterleaved)
             }
             node.installTap(onBus: 0, bufferSize: 4096, format: micFormat) { [weak self] buffer, _ in
-                guard let self, let copy = buffer.copied() else { return }
+                guard let self, let copy = processed ? VoiceProcessing.voice(of: buffer) : buffer.copied() else { return }
                 self.queue.async { self.ingest(copy, to: format, input: input, save: true) }
             }
             engine.prepare()
