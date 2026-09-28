@@ -26,6 +26,15 @@ if CommandLine.arguments.dropFirst().first == "--tokens", #available(macOS 26.4,
     exit(0)
 }
 
+// plan-cli --read <file> ["question"]: summarise a file, or answer about it.
+if CommandLine.arguments.dropFirst().first == "--read", CommandLine.arguments.count > 2 {
+    let question = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : nil
+    let start = Date()
+    print(try await ReadingDebug.run(path: CommandLine.arguments[2], question: question))
+    print(String(format: "(%.1f s)", Date().timeIntervalSince(start)))
+    exit(0)
+}
+
 // plan-cli --chat "…" "…": one conversation, Alfred's replies printed.
 if CommandLine.arguments.dropFirst().first == "--chat" {
     let conversation = Conversation.scratch()

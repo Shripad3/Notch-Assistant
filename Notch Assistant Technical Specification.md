@@ -25,7 +25,7 @@ The requirement is **no cloud AI**, not *no network*. Inference is local: no API
 
 ### Non-goals for v1
 
-- **No file contents, ever.** The agent can find, open and organise files. It cannot read what is inside one, and it cannot edit one. See §9.
+- **No editing file contents, ever.** The agent can find, open, organise and (since 28 Sep 2026) *read* files within allowed folders, on the Mac. It can never change what is inside one. See §9 and "readFile".
 - **No permanent deletion.** Removal means the Trash. The agent has no operation that destroys data, and cannot empty the Trash.
 - **No general web agent.** In-page interaction is limited to a small set of scripted per-site recipes (§9).
 - **No cross-session memory** (v1). Context lasts one activation. *Revised 27 Sep 2026:* opt-in, local conversation memory is planned (see "Next: agreed on 27 Sep 2026" under Implementation phases).
@@ -304,6 +304,14 @@ The silence threshold must adapt to the room's noise floor, sampled during the f
 
 ## Intelligence layer
 
+### Model layer (as built, 28 Sep 2026)
+
+Every model call goes through `ModelRouter.backend(for: ModelTask)`, with tasks `intent`, `conversation`, `summarize` and `analysis`. The only backend today is `AppleFoundationBackend`: the only code that creates a `LanguageModelSession`, with a 4,096-token context. Framework errors become `ModelError`.
+
+- **Structured output** is still described with `@Generable` types and `GenerationSchema`. Every tool declares its arguments that way, and a future backend translates from them.
+- **The four call sites:** command planning, conversation, meeting summaries and conversation memory, plus document reading. Their prompts were moved unchanged.
+- **The seam:** a larger local model (MLX) would take `summarize` and `analysis` here.
+
 ### Primary backend: Foundation Models
 
 macOS 26's [Foundation Models framework](https://developer.apple.com/videos/play/wwdc2025/286/) gives Swift-native access to the roughly 3-billion-parameter on-device model behind Apple Intelligence. It provides tool calling, structured output via `@Generable`, streaming and multi-turn sessions. Inference is free of cost and works offline. Per [Apple's model report](https://machinelearning.apple.com/research/apple-foundation-models-2025-updates), the developer implements a simple `Tool` Swift protocol and the framework handles the parallel and serial call graphs itself; the model was post-trained on tool-use data specifically to make this reliable.
@@ -389,6 +397,7 @@ Every tool conforms to `AssistantTool`: a name, a description the model reads, a
 | `dictate` | `target`, `text?` | No | Accessibility (typing) or Automation (Notes) | n/a | after v3 |
 | `screenshot` | `target`, `app?` | No | Screen & System Audio Recording | n/a | after v3 |
 | `recordScreen` | `action`, `sound?`, `voice?` | No | Screen & System Audio Recording, Microphone | n/a | after v3 |
+| `readFile` | `action`, `file?`, `question?`, `part?`, `measure?` | No | Files and Folders | n/a — read-only | after v3 |
 | `memory` | `action` | No | None | Forget-all confirmed | after v3 |
 | `currentTime` | `what`, `place?` | Only for a place | None | n/a | after v3 |
 | `calendar` | `action`, `when?` | Google/Outlook only | Calendar | n/a — read-only | after v3 |
@@ -556,6 +565,50 @@ Both use ScreenCaptureKit rather than `screencapture` (no shell), and always exc
   - the Mac's sound and the microphone only when asked ("with sound", "with my voice", "with audio" for both). Model-supplied flags are checked against what was said.
 - **Stopping:** a recording is a `LiveCapture` like transcripts, so the red dot, click-to-stop, Escape and "stop recording" all apply. Unlike transcripts, the wake word stays on, so "Alfred, stop recording" works.
 
+### readFile: reading documents
+
+"Summarise this" (the document in the front window, from Accessibility's `AXDocument`, else the last file read), "summarise the contract", "summarise pages 1 to 10 of the report", "what does my lease say about pets", "what's the total on that invoice", "read page 3 of the report", "how many pages/words/rows in …", "find the file that mentions Hetzner", "what have you read?".
+
+**Scope (`ReadingAccess`).**
+- **Allowed folders:** Documents, Downloads and Desktop by default, editable in Settings › Files. A file elsewhere gets an offer to allow its folder, confirmed by "yes". The app isn't sandboxed, so these are paths, not security-scoped bookmarks.
+- **Always refused, with a spoken reason:**
+  - system folders, `/Applications`, and anything inside an app;
+  - `~/Library`;
+  - hidden files and folders;
+  - key and secret files: `.ssh`, `id_rsa*`, `*.pem`, `*.key`, `*.p12`, keychains, `.kdbx`, `.env*`, `.netrc`, credentials.
+- **Audit:** a session log answers "what have you read?".
+
+**Extraction (`ContentExtractor`)**, read-only; the reading code contains no write call:
+
+| Type | How it's read |
+|---|---|
+| Text, Markdown, CSV and code | With encoding detection |
+| PDF | PDFKit per page; pages with no text layer are rendered and recognised with Vision (up to 40 pages) |
+| Word, RTF, HTML | `NSAttributedString` document readers |
+| PowerPoint and Excel | A built-in zip reader (Compression framework for deflate) and XML parsing: slides, sheets with shared strings, rows |
+| Images | Vision text recognition |
+| Email (`.eml`) | Headers plus the text part, decoding quoted-printable and base64 |
+| Pages, Numbers and Keynote | Declined with a suggestion to export |
+
+**The small context.**
+- **Chunking:** `ContentChunker` splits on sections (pages, slides, sheets), then paragraphs, into chunks of about 6,000 characters.
+- **Summaries** fit in one call, or are map-reduced (each part, then the whole). The notch shows "reading part n of m", and nothing is ever cut off silently.
+- **Very long documents:** beyond 30 parts, Alfred offers a part ("summarise pages 1 to 10") instead of half an answer.
+- **Questions** rank chunks by term frequency and rarity, and send the best few, labelled with their pages. The answer cites pages only when the document has them.
+- **Routing:** multi-part work is routed as `analysis`, ready for a larger model.
+
+**Safety.**
+- `SecretRedactor` removes passwords, keys and tokens from every answer.
+- Organising still refuses to choose files by their contents.
+- `ContentRequests` now refuses requests to *edit* a file ("edit my essay", "fix the typo in …") instead of requests to read.
+
+### Undo history
+
+"Undo that", "undo the last three" (up to 10), and "what did you just do?".
+
+- **What it covers:** file changes from `FileJournal` (on disk), and other reversible actions from `RecentUndo`: added or moved events, added, completed or deleted tasks. That second list is in memory only and holds the last 10.
+- **Order:** the two are merged newest first.
+
 ### Conversation and memory
 
 **Routing.**
@@ -686,7 +739,7 @@ Write Tier 2 as a per-site recipe with a version-stamped selector strategy and a
 
 Two absolute limits define this whole area. They are not settings, not defaults, and not toggles. They are architectural:
 
-1. **The agent never reads file contents and never edits a file.** It operates on the file *as an object* — its name, location, kind and dates — and never on what is inside it. Opening a document hands it to another application; the agent does not see a single byte.
+1. **The agent never edits a file.** Organising operates on the file *as an object*: its name, location, kind and dates. *Revised 28 Sep 2026:* reading is allowed through `readFile` (see there), on the Mac, within allowed folders, never secrets. Organising still never chooses files by their contents.
 2. **The agent cannot permanently delete anything.** The only removal operation is moving to Trash. There is no unlink, no secure delete, and no ability to empty the Trash.
 
 The design below exists to make these enforceable by structure rather than by instruction, because a rule written in a prompt is a request and a rule enforced by an API boundary is a guarantee.
@@ -1022,7 +1075,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 335 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 355 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist
@@ -1077,8 +1130,9 @@ These are genuine forks. Flag them rather than guessing:
 These are the invariants. If a future change violates one, the change is wrong, not the rule.
 
 - No `runCommand` tool, ever (§1).
-- No tool reads file contents. No tool edits a file. No `readFile`, `editFile` or `writeFile` exists (§9).
-- File search is metadata-only. Content-scope Spotlight predicates are never used (§9).
+- No tool edits a file's contents. No `editFile` or `writeFile` exists, and the reading code has no write call (§9).
+- Reading is limited: only allowed folders, never keys, passwords, `.env`, hidden files, apps or Library; secrets are redacted from answers. Content-scope Spotlight search is used only by `readFile`, within allowed folders (§9).
+- Every model call goes through `ModelRouter`; only `AppleFoundationBackend` creates a `LanguageModelSession` (§8).
 - No permanent deletion. Trash is the only removal, and the Trash cannot be emptied by the agent (§9).
 - The model receives tokens, never paths, and can only act on tokens from a search in the same activation (§9).
 - Every mutating operation journals its inverse to disk before acting; operations with no clean inverse are refused (§9).

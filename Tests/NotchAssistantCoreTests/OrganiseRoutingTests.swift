@@ -163,8 +163,9 @@ struct OrganiseGroundingTests {
         #expect(!OrganiseFilesTool.isGrounded(args("move", destination: "Archive"), in: "move my screenshots somewhere"))
     }
 
-    @Test(arguments: ["read me what's in my notes file", "summarise my meeting notes", "What's inside the contract?"])
-    func contentRequestsDeclined(transcript: String) {
+    /// Reading is allowed now (`readFile`); changing a file's contents never is.
+    @Test(arguments: ["edit my notes file", "rewrite my essay", "fix the typo in the contract", "add a line to my notes"])
+    func contentChangesDeclined(transcript: String) {
         #expect(ContentRequests.refusal(for: transcript) != nil)
     }
 

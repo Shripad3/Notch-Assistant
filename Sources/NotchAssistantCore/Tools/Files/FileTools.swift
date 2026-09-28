@@ -73,7 +73,6 @@ struct OpenFileTool: AssistantTool {
     }
 
     func execute(_ arguments: FileRequestArguments) async throws -> ToolResult {
-        try FileTools.refuseContentRequests()
         try FileAccess.ensureAccess()
         let found = try await SpotlightSearch.run(arguments.query)
         guard let best = found.first else { throw FileTools.notFound(arguments) }
@@ -123,7 +122,6 @@ struct FindFilesTool: AssistantTool {
     }
 
     func execute(_ arguments: FileRequestArguments) async throws -> ToolResult {
-        try FileTools.refuseContentRequests()
         try FileAccess.ensureAccess()
         let found = try await SpotlightSearch.run(arguments.query, limit: Self.limit + 1)
         guard !found.isEmpty else { throw FileTools.notFound(arguments) }
@@ -169,13 +167,14 @@ enum FileTools {
 
     private static let contentWords: Set<String> = ["mentions", "mentioning", "contains", "containing", "inside", "says", "saying", "about", "read"]
 
-    /// The agent never reads file contents (spec §9). A request that depends
-    /// on them is declined plainly, rather than guessed at by name.
+    /// Organising picks files by name, type and date, never by what they
+    /// say ("move the file that mentions X"): that would act on files chosen
+    /// by a guess at their contents. Reading them is a separate tool.
     static func refuseContentRequests() throws {
         guard let transcript = CommandContext.transcript else { return }
         let words = AppNameMatcher.normalize(transcript).split(separator: " ").map(String.init)
         if words.contains(where: contentWords.contains) {
-            throw ToolError("I can't look inside files, only at their names, types and dates")
+            throw ToolError("I move and rename files by their names, types and dates, not by what's inside them")
         }
     }
 

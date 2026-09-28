@@ -307,7 +307,10 @@ public actor AssistantCoordinator {
                 try Task.checkCancellation()
                 await apply(.toolCall(step.tool.label, target: step.target()), session: id)
                 // A throwing step leaves the remaining steps unexecuted (spec §8).
-                outcomes.append(try await step.execute(isFinal: index == plan.steps.count - 1))
+                let label = step.tool.label
+                outcomes.append(try await step.execute(isFinal: index == plan.steps.count - 1) { [weak self] text in
+                    Task { await self?.apply(.toolCall(label, target: text), session: id) }
+                })
             }
             let items = outcomes.last?.items ?? []
             let text = outcomes.map(\.text).joined(separator: " · ")

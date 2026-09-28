@@ -7,6 +7,12 @@ enum CommandContext {
     /// False for steps followed by others: a step with a side effect only
     /// suitable at the end (opening a single found file) skips it.
     @TaskLocal static var isFinalStep = true
+    /// Updates the notch while a long step runs ("reading part 3 of 7").
+    @TaskLocal static var progress: (@Sendable (String) -> Void)?
+
+    static func report(_ text: String) {
+        progress?(text)
+    }
 }
 
 /// Checks that a model-supplied value actually came from what the user said.

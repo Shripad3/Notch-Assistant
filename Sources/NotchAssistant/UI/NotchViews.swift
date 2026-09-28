@@ -118,7 +118,8 @@ struct NotchExpandedView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(heading)
                     .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(2)
+                    // Answers (summaries, readings) get room; states stay short.
+                    .lineLimit(isAnswer ? 8 : 2)
                 if let detail {
                     Text(detail)
                         .font(.system(size: 12))
@@ -146,6 +147,10 @@ struct NotchExpandedView: View {
         default:
             EmptyView()
         }
+    }
+
+    private var isAnswer: Bool {
+        if case .reply = status.state { true } else { false }
     }
 
     private var heading: String {

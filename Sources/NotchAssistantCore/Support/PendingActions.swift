@@ -27,36 +27,51 @@ enum PendingActions {
     }
 }
 
-/// The last change outside files that "undo that" can reverse (a created or
-/// moved event). Kept for ten minutes, in memory only; file changes have
-/// their own journal on disk.
+/// Recent changes outside files that "undo" can reverse (a created or
+/// moved event, a completed task), newest last, at most ten. In memory only;
+/// file changes have their own journal on disk (`FileJournal`), and
+/// `UndoFileChangeTool` merges the two by time.
 enum RecentUndo {
     struct Entry: Sendable {
+        let id = UUID()
         let date: Date
         let summary: String
         let undo: @Sendable () async throws -> String
     }
 
-    static let lifetime: TimeInterval = 600
-    private static let last = Mutex<Entry?>(nil)
+    static let depth = 10
+    private static let stack = Mutex<[Entry]>([])
 
     static func record(_ summary: String, undo: @escaping @Sendable () async throws -> String) {
-        last.withLock { $0 = Entry(date: Date(), summary: summary, undo: undo) }
-    }
-
-    /// The entry if still fresh, without removing it.
-    static var current: Entry? {
-        last.withLock { entry in
-            guard let entry, Date().timeIntervalSince(entry.date) < lifetime else { return nil }
-            return entry
+        stack.withLock { list in
+            list.append(Entry(date: Date(), summary: summary, undo: undo))
+            if list.count > depth { list.removeFirst(list.count - depth) }
         }
     }
 
+    /// Newest first.
+    static var entries: [Entry] { stack.withLock { $0.reversed() } }
+
+    static var current: Entry? { stack.withLock { $0.last } }
+
+    /// Removes and returns the newest entry.
     static func take() -> Entry? {
-        last.withLock { entry in
-            defer { entry = nil }
-            guard let found = entry, Date().timeIntervalSince(found.date) < lifetime else { return nil }
-            return found
+        stack.withLock { $0.popLast() }
+    }
+
+    /// Removes a particular entry (the one being undone).
+    static func remove(_ id: UUID) -> Entry? {
+        stack.withLock { list in
+            guard let index = list.firstIndex(where: { $0.id == id }) else { return nil }
+            return list.remove(at: index)
+        }
+    }
+
+    /// Tests: the newest entry with this summary.
+    static func take(summary: String) -> Entry? {
+        stack.withLock { list in
+            guard let index = list.lastIndex(where: { $0.summary == summary }) else { return nil }
+            return list.remove(at: index)
         }
     }
 }

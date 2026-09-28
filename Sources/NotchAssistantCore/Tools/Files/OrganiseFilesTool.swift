@@ -209,9 +209,10 @@ struct UndoFileChangeTool: AssistantTool {
     let name = "undoFileChange"
     let title = "Undo"
     let symbol = "arrow.uturn.backward"
-    let keywords: Set<String> = ["undo", "revert", "back"]
+    let keywords: Set<String> = ["undo", "revert", "back", "did", "done", "changed"]
     let description = """
-        Undo the last change: a file rename, move, copy, trash or new folder, or a calendar event just added or moved. "undo that" → undo.
+        Undo recent changes (files, calendar events, tasks), or say what they were. "undo that" → undo, count 1. \
+        "undo the last three" → undo, count 3. "what did you just do" → list.
         """
     let requiresNetwork = false
     let permission = ToolPermission.files
@@ -219,32 +220,84 @@ struct UndoFileChangeTool: AssistantTool {
 
     @Generable
     struct Arguments: Sendable {
-        @Guide(description: "Always \"last\"")
-        var which: String
+        @Guide(description: "What to do", .anyOf(["undo", "list"]))
+        var action: String
+        @Guide(description: "How many recent changes to undo", .range(1...10))
+        var count: Int?
+    }
+
+    /// A recent change: a file change (journal) or another action.
+    enum Change {
+        case file(FileJournal.Entry)
+        case action(RecentUndo.Entry)
+
+        var date: Date {
+            switch self {
+            case .file(let entry): entry.date
+            case .action(let entry): entry.date
+            }
+        }
+
+        var summary: String {
+            switch self {
+            case .file(let entry): entry.summary
+            case .action(let entry): entry.summary
+            }
+        }
+    }
+
+    /// Everything undoable, newest first, the ten most recent.
+    static func recent(journal: FileJournal = .shared) -> [Change] {
+        let files = journal.history.filter { $0.status != .undone && !$0.steps.isEmpty }.prefix(RecentUndo.depth).map(Change.file)
+        let actions = RecentUndo.entries.map(Change.action)
+        return (files + actions).sorted { $0.date > $1.date }.prefix(RecentUndo.depth).map { $0 }
     }
 
     func target(of arguments: Arguments) -> String {
-        Self.newestIsRecentUndo ? (RecentUndo.current?.summary ?? "Last change") : (FileJournal.shared.lastUndoable?.summary ?? "Last change")
+        arguments.action == "list" ? "Recent changes" : (Self.recent().first?.summary ?? "Last change")
     }
 
     func execute(_ arguments: Arguments) async throws -> ToolResult {
-        // Whichever happened last: a file change or another undoable action.
-        if Self.newestIsRecentUndo, let recent = RecentUndo.take() {
-            return ToolResult(try await recent.undo())
+        let changes = Self.recent()
+        if arguments.action == "list" {
+            guard !changes.isEmpty else { return ToolResult("I haven't changed anything recently", isAnswer: true) }
+            let described = changes.prefix(5).map { "\($0.summary) (\($0.date.formatted(.relative(presentation: .named))))" }
+            return ToolResult("Most recent first: " + described.joined(separator: "; "), isAnswer: true)
         }
-        guard let last = FileJournal.shared.lastUndoable else { throw ToolError("There's nothing to undo") }
-        return ToolResult(try FileOrganizer.live.undo(last.id))
+        let count = min(max(arguments.count ?? 1, 1), RecentUndo.depth)
+        guard !changes.isEmpty else { throw ToolError("There's nothing to undo") }
+        var done: [String] = []
+        for change in changes.prefix(count) {
+            switch change {
+            case .file(let entry):
+                done.append(try FileOrganizer.live.undo(entry.id))
+            case .action(let entry):
+                guard let taken = RecentUndo.remove(entry.id) else { continue }
+                done.append(try await taken.undo())
+            }
+        }
+        if count > changes.count { done.append("That was everything I can undo") }
+        return ToolResult(done.joined(separator: " · "), undoable: false)
     }
 
-    private static var newestIsRecentUndo: Bool {
-        guard let recent = RecentUndo.current else { return false }
-        guard let file = FileJournal.shared.lastUndoable else { return true }
-        return recent.date > file.date
-    }
+    private static let numbers = ["two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10]
 
     func directArguments(for command: DirectCommand) -> Arguments? {
-        ["undo", "undo that", "undo it", "undo the last change", "undo last change", "undo the last one", "revert that", "put it back"]
-            .contains(command.text) ? Arguments(which: "last") : nil
+        let text = command.text
+        if ["undo", "undo that", "undo it", "undo the last change", "undo last change", "undo the last one", "revert that", "put it back"].contains(text) {
+            return Arguments(action: "undo", count: 1)
+        }
+        if ["what did you just do", "what have you done", "what did you change", "what have you changed", "what did you do",
+            "what were the last changes", "show me what you changed"].contains(text) {
+            return Arguments(action: "list", count: nil)
+        }
+        // "undo the last three", "undo the last 3 changes", "undo the last two things".
+        let words = text.split(separator: " ").map(String.init)
+        guard words.first == "undo", words.contains("last") else { return nil }
+        for word in words {
+            if let n = Self.numbers[word] ?? Int(word), (1...10).contains(n) { return Arguments(action: "undo", count: n) }
+        }
+        return nil
     }
 }
 

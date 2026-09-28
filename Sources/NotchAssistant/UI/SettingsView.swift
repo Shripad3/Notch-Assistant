@@ -429,12 +429,46 @@ private struct WeatherAttributionRow: View {
 private struct FilesPane: View {
     @State private var history: [FileJournal.Entry] = []
     @State private var message: String?
+    @AppStorage(ReadingAccess.enabledKey) private var readingOn = true
+    @State private var readable: [URL] = ReadingAccess.folders
 
     var body: some View {
         Form {
             Section {
-                Text("Notch Assistant can't read what's inside your files, can't edit them, and can't delete anything permanently. “Delete” moves to the Trash, and it never empties the Trash.")
+                Text("Notch Assistant never edits what's inside your files and can't delete anything permanently. “Delete” moves to the Trash, and it never empties the Trash.")
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            Section {
+                Toggle("Read files when asked", isOn: $readingOn)
+                if readingOn {
+                    ForEach(readable, id: \.self) { folder in
+                        HStack {
+                            Label(folder.lastPathComponent, systemImage: "folder")
+                            Text(folder.deletingLastPathComponent().path).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                            Spacer()
+                            Button {
+                                readable.removeAll { $0 == folder }
+                                ReadingAccess.setFolders(readable)
+                            } label: { Image(systemName: "minus.circle") }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                    Button("Add Folder…") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseFiles = false
+                        panel.canChooseDirectories = true
+                        panel.allowsMultipleSelection = true
+                        panel.prompt = "Allow Reading"
+                        if panel.runModal() == .OK {
+                            readable += panel.urls.filter { !readable.contains($0) }
+                            ReadingAccess.setFolders(readable)
+                        }
+                    }
+                }
+            } header: {
+                Text("Reading")
+            } footer: {
+                Text("“Summarise the contract”, “what does my lease say about pets”, “read page 3 of the report”, “how many pages in the thesis”, “find the file that mentions Hetzner”, “what have you read?”. Only files in these folders, and never keys, passwords, .env files, hidden files, apps or the Library folder. Everything is read on this Mac; nothing is uploaded. Anything that looks like a password is left out of answers.")
             }
             Section("Where it can act") {
                 ForEach(["Documents", "Downloads", "Desktop"], id: \.self) { name in

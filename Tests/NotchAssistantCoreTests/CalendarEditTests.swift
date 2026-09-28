@@ -61,7 +61,7 @@ struct CalendarEditTests {
         let event = try #require(writer.events.withLock { $0.first })
         #expect(event.start == Self.tomorrow(13))
         #expect(event.end == Self.tomorrow(13, 30))
-        let undo = try #require(RecentUndo.take())
+        let undo = try #require(RecentUndo.take(summary: "Add “Lunch with Sam”"))
         _ = try await undo.undo()
         #expect(writer.events.withLock { $0.isEmpty })
     }
@@ -211,7 +211,7 @@ struct TaskTests {
         #expect(try await run("what's on my to-do list", tool).text.hasPrefix("You have 2 tasks"))
         _ = try await run("mark buy milk as done", tool)
         #expect(try await store.openTasks().map(\.title) == ["Call the bank"])
-        _ = try await RecentUndo.take()?.undo()
+        _ = try await RecentUndo.take(summary: "Complete “Buy milk”")?.undo()
         #expect(try await store.openTasks().count == 2)
     }
 
@@ -238,5 +238,43 @@ struct TaskTests {
     @Test func googleDueDatesAreLocalDays() {
         let date = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 28, hour: 18))!
         #expect(GoogleTasks.dueString(date) == "2026-09-28T00:00:00.000Z")
+    }
+}
+
+@Suite(.serialized)
+struct UndoHistoryTests {
+    @Test func keepsTheLastTenAndUndoesSeveral() async throws {
+        while RecentUndo.take() != nil {}
+        let undone = LockedList()
+        for n in 1...12 {
+            RecentUndo.record("Change \(n)") {
+                undone.append("\(n)")
+                return "Undid \(n)"
+            }
+        }
+        #expect(RecentUndo.entries.count == 10)
+        #expect(RecentUndo.entries.first?.summary == "Change 12")
+        let tool = UndoFileChangeTool()
+        let args = try #require(DirectCommand("undo the last three").flatMap { tool.directArguments(for: $0) })
+        #expect(args.count == 3)
+        // Only this history (no file journal entries newer than these).
+        let recent = UndoFileChangeTool.recent(journal: FileJournal(file: FileManager.default.temporaryDirectory.appending(path: "\(UUID()).json")))
+        #expect(recent.first?.summary == "Change 12")
+        for change in recent.prefix(3) {
+            if case .action(let entry) = change { _ = try await RecentUndo.remove(entry.id)?.undo() }
+        }
+        #expect(undone.items == ["12", "11", "10"])
+        while RecentUndo.take() != nil {}
+    }
+
+    @Test(arguments: [
+        ("undo that", "undo", 1),
+        ("undo the last 2 changes", "undo", 2),
+        ("what did you just do", "list", 0),
+    ])
+    func phrasings(said: String, action: String, count: Int) throws {
+        let args = try #require(DirectCommand(said).flatMap { UndoFileChangeTool().directArguments(for: $0) })
+        #expect(args.action == action)
+        #expect((args.count ?? 0) == count)
     }
 }
