@@ -67,7 +67,7 @@ enum ScreenText {
         let (root, app, selection) = await MainActor.run { () -> ((any TextNode)?, String, String?) in
             guard let front = NSWorkspace.shared.frontmostApplication else { return (nil, "", nil) }
             let element = AXUIElementCreateApplication(front.processIdentifier)
-            AXUIElementSetMessagingTimeout(element, 1)
+            AXUIElementSetMessagingTimeout(element, 0.25)
             // Electron and Chromium only build their tree when asked.
             AXUIElementSetAttributeValue(element, "AXManualAccessibility" as CFString, kCFBooleanTrue)
             var window: CFTypeRef?
@@ -111,32 +111,37 @@ struct AXTextNode: TextNode {
     let texts: [String]
     let children: [any TextNode]
 
+    /// Nodes and time a reading may take: big web pages have tens of
+    /// thousands of elements, and one call per attribute took 40 seconds.
+    static let maximumNodes = 1_500
+    static let timeBudget: TimeInterval = 2
+
     @MainActor
-    init(snapshot element: AXUIElement, depth: Int = 0, count: inout Int) {
-        func string(_ attribute: String) -> String? {
-            var value: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
-            return value as? String
-        }
-        role = string(kAXRoleAttribute) ?? ""
-        subrole = string(kAXSubroleAttribute) ?? ""
+    init(snapshot element: AXUIElement, depth: Int = 0, count: inout Int, deadline: Date) {
+        // One request for all six attributes instead of six.
+        let names = [kAXRoleAttribute, kAXSubroleAttribute, kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute, kAXChildrenAttribute] as CFArray
+        var values: CFArray?
+        let fetched = AXUIElementCopyMultipleAttributeValues(element, names, AXCopyMultipleAttributeOptions(rawValue: 0), &values) == .success
+        let list = fetched ? (values as? [AnyObject] ?? []) : []
+        func value(_ index: Int) -> AnyObject? { index < list.count ? list[index] : nil }
+        role = value(0) as? String ?? ""
+        subrole = value(1) as? String ?? ""
         count += 1
         if role == "AXSecureTextField" || subrole == "AXSecureTextField" {
-            // Never even copy a password field's value.
+            // Never keep a password field's value.
             texts = []
             children = []
             return
         }
-        texts = [kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute].compactMap(string)
-        var kids: CFTypeRef?
-        guard depth < 40, count < 3_000, AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &kids) == .success,
-              let list = kids as? [AXUIElement] else {
+        texts = [value(2), value(3), value(4)].compactMap { $0 as? String }
+        guard depth < 40, count < Self.maximumNodes, Date() < deadline,
+              let kids = value(5) as? [AXUIElement] else {
             children = []
             return
         }
         var built: [any TextNode] = []
-        for child in list where count < 3_000 {
-            built.append(AXTextNode(snapshot: child, depth: depth + 1, count: &count))
+        for child in kids where count < Self.maximumNodes && Date() < deadline {
+            built.append(AXTextNode(snapshot: child, depth: depth + 1, count: &count, deadline: deadline))
         }
         children = built
     }
@@ -144,7 +149,7 @@ struct AXTextNode: TextNode {
     @MainActor
     init(snapshot element: AXUIElement) {
         var count = 0
-        self.init(snapshot: element, count: &count)
+        self.init(snapshot: element, count: &count, deadline: Date().addingTimeInterval(Self.timeBudget))
     }
 }
 
@@ -191,7 +196,7 @@ struct ScreenReadTool: AssistantTool {
         default: "Describe briefly what's on the screen: which app, what the user is looking at, and anything that needs attention. Two or three sentences."
         }
         let backend = ModelRouter.backend(for: reading.text.count > ContentChunker.chunkCharacters ? .analysis : .summarize)
-        let prompt = "\(task)\n\nApp: \(reading.app)\nText in the window:\n\(String(reading.text.prefix(ContentChunker.chunkCharacters + 1_500)))"
+        let prompt = "\(task) Speak to the user as \"you\".\n\nApp: \(reading.app)\nText in the window:\n\(String(reading.text.prefix(ContentChunker.chunkCharacters + 1_500)))"
         do {
             let answer = try await backend.respond(system: DocumentReader.system, prompt: prompt, temperature: 0.2)
             return ToolResult(SecretRedactor.redact(Conversation.spoken(answer)), isAnswer: true)

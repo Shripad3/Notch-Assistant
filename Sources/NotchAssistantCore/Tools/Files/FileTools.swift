@@ -74,7 +74,13 @@ struct OpenFileTool: AssistantTool {
 
     func execute(_ arguments: FileRequestArguments) async throws -> ToolResult {
         try FileAccess.ensureAccess()
-        let found = try await SpotlightSearch.run(arguments.query)
+        var found = try await SpotlightSearch.run(arguments.query)
+        if found.isEmpty, !arguments.name.isEmpty, arguments.period == nil,
+           let close = FileNameMatcher.best(for: arguments.name + (arguments.kind == "pdf" ? " pdf" : ""), among: await FileNameMatcher.files(in: FileAccess.scopedRoots)) {
+            // A name like 2XQ40-assignment12 as heard: "to XQ 40 assignment 12".
+            let date = (try? close.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            found = [FoundFile(url: close, name: close.lastPathComponent, date: date)]
+        }
         guard let best = found.first else { throw FileTools.notFound(arguments) }
         let opened = try await FileTools.open(best)
         let others = found.count - 1

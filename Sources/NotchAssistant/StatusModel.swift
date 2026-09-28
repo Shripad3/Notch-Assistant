@@ -25,6 +25,9 @@ enum WakeStatus: Equatable {
 @Observable
 final class StatusModel {
     var state: AssistantState = .idle
+    /// The answer on screen before Alfred started listening again, kept in
+    /// view underneath "Listening".
+    var previousOutcome: String?
     /// Smoothed microphone level, 0...1.
     private(set) var level: Float = 0
     /// Menu bar kill switch.

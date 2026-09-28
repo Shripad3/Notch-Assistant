@@ -122,8 +122,8 @@ struct ReadFileTool: AssistantTool {
     /// screenshot → the latest; otherwise a name search in the allowed
     /// folders.
     static func resolve(_ spoken: String?) async throws -> Resolution {
-        let text = AppNameMatcher.normalize(spoken ?? "")
-        if thisWords.contains(text) {
+        let text = AppNameMatcher.normalize(FileNameMatcher.separateExtension(spoken ?? ""))
+        if refersToFront(text) {
             if let front = await frontDocument() { return .file(front) }
             if let last = ReadLog.last { return .file(last) }
             return .ask("Which file? Open it, or say its name")
@@ -133,8 +133,24 @@ struct ReadFileTool: AssistantTool {
         guard query.isSpecific else { return .ask("Which file?") }
         let roots = Array(Set(ReadingAccess.folders + FileAccess.scopedRoots))
         let found = try await SpotlightSearch.run(query, limit: 5, roots: roots)
+        if let best = found.first { return .file(best.url) }
+        // Names like 2XQ40-assignment12.pdf rarely come back word for
+        // word; compare how they sound instead.
+        if let close = FileNameMatcher.best(for: text, among: await FileNameMatcher.files(in: roots)) { return .file(close) }
         guard let best = found.first else { throw ToolError("I couldn't find “\(spoken ?? "")” in \(Self.list(ReadingAccess.folders.map(\.lastPathComponent)))") }
         return .file(best.url)
+    }
+
+    /// "this", "the document that's open", "my current pdf"…
+    static func refersToFront(_ text: String) -> Bool {
+        if thisWords.contains(text) { return true }
+        let words = text.split(separator: " ").map(String.init)
+        let pointers: Set<String> = ["this", "that", "the", "my", "current", "currently", "open", "opened", "which", "is", "s", "i", "have",
+                                     "on", "screen", "in", "front", "up", "right", "now", "here"]
+        let nouns: Set<String> = ["document", "file", "pdf", "doc", "one", "page", "paper"]
+        let rest = words.filter { !pointers.contains($0) }
+        let saysOpen = words.contains { ["current", "currently", "open", "opened", "front", "screen"].contains($0) }
+        return rest.count == 1 && nouns.contains(rest[0]) && (saysOpen || words.count <= 2)
     }
 
     /// The file open in the front window (Preview, Word, TextEdit…), from
@@ -208,9 +224,9 @@ struct ReadFileTool: AssistantTool {
     ]
 
     static func looksLikeFile(_ text: String) -> Bool {
-        let words = AppNameMatcher.normalize(text).split(separator: " ").map(String.init)
+        let words = AppNameMatcher.normalize(FileNameMatcher.separateExtension(text)).split(separator: " ").map(String.init)
         guard !words.isEmpty, words.count <= 8 else { return false }
-        if thisWords.contains(words.joined(separator: " ")) { return true }
+        if refersToFront(words.joined(separator: " ")) { return true }
         if words.contains(where: fileNouns.contains) { return true }
         if let last = words.last, OpenFileTool.extensions.contains(last) { return true }
         return FileQuery(spoken: text) != nil

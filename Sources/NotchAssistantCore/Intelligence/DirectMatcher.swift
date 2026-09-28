@@ -1,3 +1,4 @@
+import Foundation
 /// A normalised command for tools' direct matching: "Please open YouTube in
 /// Arc" → text "open youtube in arc", verb "open", rest "youtube in arc".
 /// Commands without a known leading verb ("mute") have an empty verb and the
@@ -11,16 +12,25 @@ public struct DirectCommand: Sendable, Equatable {
     public let original: String
 
     static let verbs = ["go to", "look up", "search for", "open", "launch", "start", "search", "google", "play", "watch"]
-    private static let fillers = ["please ", "can you ", "could you ", "hey "]
+    private static let fillers = ["please ", "can you ", "could you ", "would you ", "will you ", "hey ", "alfred ", "okay ", "ok "]
 
     init?(_ transcript: String) {
         var text = AppNameMatcher.normalize(transcript)
-        for filler in Self.fillers where text.hasPrefix(filler) {
-            text.removeFirst(filler.count)
+        var original = transcript.trimmingCharacters(in: .whitespaces)
+        // "Can you please summarise …" → "summarise …", in both forms, so
+        // tools anchored on the start of the sentence still recognise it.
+        var stripped = true
+        while stripped {
+            stripped = false
+            for filler in Self.fillers where text.hasPrefix(filler) {
+                text.removeFirst(filler.count)
+                original = Self.dropping(filler, from: original)
+                stripped = true
+            }
         }
         if text.hasSuffix(" please") { text.removeLast(" please".count) }
         guard !text.isEmpty else { return nil }
-        self.original = transcript
+        self.original = original
         self.text = text
         if let verb = Self.verbs.first(where: { text.hasPrefix($0 + " ") }) {
             self.verb = verb
@@ -29,6 +39,14 @@ public struct DirectCommand: Sendable, Equatable {
             self.verb = ""
             self.rest = text
         }
+    }
+
+    /// The original with a spoken filler removed from its start, ignoring
+    /// case and the punctuation after it ("Alfred, open …").
+    private static func dropping(_ filler: String, from original: String) -> String {
+        let word = filler.trimmingCharacters(in: .whitespaces)
+        guard original.lowercased().hasPrefix(word) else { return original }
+        return String(original.dropFirst(word.count)).trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: ",")))
     }
 
     /// Splits "youtube in arc" into ("youtube", "arc").

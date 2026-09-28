@@ -91,6 +91,8 @@ public final class Speaker {
     private let synthesizer = AVSpeechSynthesizer()
     private var neuralTask: Task<Void, Never>?
     private var neuralSpeaking = false
+    /// Counts interruptible utterances, so a finished one can't disarm the next.
+    private var utterance = 0
 
     public init() {}
 
@@ -120,12 +122,27 @@ public final class Speaker {
         default:
             return
         }
-        say(text)
+        say(text, interruptible: true)
     }
 
     /// Speaks regardless of the Speak responses setting (voice preview).
-    public func say(_ text: String) {
+    /// `interruptible`: the user can talk over it to stop it and be heard.
+    public func say(_ text: String, interruptible: Bool = false) {
         stop()
+        if interruptible {
+            utterance += 1
+            let id = utterance
+            BargeIn.began(text)
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(200))
+                while let self, self.utterance == id, self.neuralSpeaking || self.synthesizer.isSpeaking {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+                // The echo's tail.
+                try? await Task.sleep(for: .milliseconds(300))
+                if self?.utterance == id { BargeIn.ended() }
+            }
+        }
         if let neural = Self.neural, neural.isActive {
             neuralSpeaking = true
             neuralTask = Task { [weak self] in
@@ -156,6 +173,8 @@ public final class Speaker {
     }
 
     public func stop() {
+        utterance += 1
+        BargeIn.ended()
         neuralSpeaking = false
         neuralTask?.cancel()
         neuralTask = nil

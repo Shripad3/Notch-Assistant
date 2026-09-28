@@ -49,6 +49,7 @@ The requirement is **no cloud AI**, not *no network*. Inference is local: no API
 | File search | `NSMetadataQuery` | `MDQuery` on a background thread | `NSMetadataQuery` spun a nested run loop and stalled the main thread |
 | Signing | Free personal team | Apple Development certificate plus a provisioning profile | WeatherKit needs an entitlement from a profile |
 | New capabilities | — | `getWeather`, `runShortcut`, routines, file undo, clock tools | Requested during use |
+| Arbitration | Triggers only in Idle | Also while an outcome is shown or spoken: speaking over Alfred stops it and listens; after each outcome Alfred listens a few seconds without the wake word | Waiting for a long answer to finish before saying anything else felt slow |
 
 ## Target environment
 
@@ -265,7 +266,14 @@ Mitigations, all required if the feature ships: cap capture at 10 fps, downscale
 
 ### Arbitration
 
-The coordinator accepts a trigger only in the `Idle` state and applies a 1-second debounce across all sources. A trigger arriving in any other state is dropped, except a gesture-cancel, which is routed to the same path as `Escape`.
+The coordinator accepts a trigger in the `Idle` state and applies a 1-second debounce across all sources. A trigger arriving while Alfred is listening, thinking or acting is dropped, except a gesture-cancel, which is routed to the same path as `Escape`.
+
+**As built, beyond that:**
+
+- **Answering:** a trigger in Question, Confirm or Alert (and Reply in a conversation) answers it.
+- **Interrupting:** a trigger in Result, Reply, List or Error starts a new command at once, with no debounce. Speech stops as soon as the notch shows Listening.
+- **Talking over Alfred:** with the noise filter (echo cancellation) on, the speech wake listener also hears the user while Alfred speaks (`BargeIn`). It counts as an interruption when it hears "stop" (or "wait", "enough"…), or at least two words, two-thirds of them not in Alfred's own sentence, so its echo doesn't trigger it. The first words are in the pre-roll, so they aren't lost. "Stop" on its own just stops. The settings preview voice can't be interrupted.
+- **Listening after an outcome:** after each result, reply, list or error, once speech has finished, Alfred listens without the wake word (Settings › Model & Voice, "Keep listening after a reply": Off, 3, 4 (default) or 5 seconds of patience). The outcome stays under "Listening". Silence ends it; so do closings such as "thanks", "okay" or "that's all", which are never run as commands. Errors from starting to listen (no microphone) don't reopen it.
 
 ## Speech pipeline
 
@@ -279,7 +287,7 @@ Fallback behind the same `TranscriptionService` protocol: `whisper.cpp` or `mlx-
 
 Hold-to-talk needs none — release ends the utterance. Wake word and gesture do:
 
-- 800 ms of sub-threshold audio ends the utterance.
+- 650 ms of sub-threshold audio ends the utterance (800 ms originally; shortened because every command waited for it).
 - 10 s hard cap regardless.
 - 2 s of silence with no speech at all ends listening. The command may still be in the pre-roll, so it is transcribed. An empty transcript, or one that is only the wake word, returns to Idle without invoking the model.
 
@@ -296,7 +304,8 @@ The silence threshold must adapt to the room's noise floor, sampled during the f
 - **Download:** the model (about 80 MB) comes from Hugging Face the first time a Kokoro voice is chosen, into Application Support/NotchAssistant/Kokoro. After that it works offline.
 - **Speed:** measured on the M4 Air, loading from disk takes 0.15 s. The first sentence takes about 0.7 s and later ones about 0.2 s for several seconds of speech.
 - **Memory:** it holds about 500 MB while loaded. So it loads while the user is speaking (to hide the delay) and unloads after 3 idle minutes; the idle footprint doesn't change.
-- **Fallback:** if Kokoro isn't downloaded or fails, the system voice speaks instead.
+- **Fallback:** if Kokoro isn't downloaded or fails on the first sentence, the system voice speaks instead. A later sentence that fails is skipped rather than switching voices mid-answer.
+- **Sentence by sentence:** Kokoro accepts at most 510 phonemes per call, and a long summary once exceeded it and fell back to a system voice. Text is split at sentence ends (then commas, then words) into pieces of at most 180 characters. Each piece is made while the one before plays, so speech starts after the first sentence rather than the whole answer.
 - **Structure:** `Speaker` (Core) knows it only through the `NeuralVoice` protocol, so Core and its tests don't depend on FluidAudio.
 - **Dependency:** FluidAudio is added with no package traits, which leaves out its prebuilt text-normalisation binary (used only by non-English voices).
 
@@ -572,7 +581,7 @@ Both use ScreenCaptureKit rather than `screencapture` (no shell), and always exc
 
 ### readFile: reading documents
 
-"Summarise this" (the document in the front window, from Accessibility's `AXDocument`, else the last file read), "summarise the contract", "summarise pages 1 to 10 of the report", "what does my lease say about pets", "what's the total on that invoice", "read page 3 of the report", "how many pages/words/rows in …", "find the file that mentions Hetzner", "what have you read?".
+"Summarise this" (also "the document that's open", "my current PDF": the document in the front window, from Accessibility's `AXDocument`, else the last file read), "summarise the contract", "summarise pages 1 to 10 of the report", "what does my lease say about pets", "what's the total on that invoice", "read page 3 of the report", "how many pages/words/rows in …", "find the file that mentions Hetzner", "what have you read?".
 
 **Scope (`ReadingAccess`).**
 - **Allowed folders:** Documents, Downloads and Desktop by default, editable in Settings › Files. A file elsewhere gets an offer to allow its folder, confirmed by "yes". The app isn't sandboxed, so these are paths, not security-scoped bookmarks.
@@ -620,7 +629,7 @@ The microphone goes through Apple's voice processing (`setVoiceProcessingEnabled
 
 "What's on my screen", "what does this error say", "read this to me", "what's this app asking me", "summarise this page".
 
-- **Source:** the front window's text through Accessibility first. It's exact and cheap. Electron and Chromium are asked for their tree with `AXManualAccessibility`, and a subtree snapshot of up to 3,000 nodes is copied on the main actor.
+- **Source:** the front window's text through Accessibility first. It's exact and cheap. Electron and Chromium are asked for their tree with `AXManualAccessibility`. A subtree snapshot is copied on the main actor, with one `AXUIElementCopyMultipleAttributeValues` request per element (not one per attribute), capped at 1,500 elements and 2 seconds, with a 0.25 s messaging timeout. One call per attribute on a large web page took 44 seconds.
 - **Fallback:** when the tree yields under 120 characters (canvas apps, games, video, remote desktops), Alfred recognises text in a ScreenCaptureKit capture of the window with Vision.
 - **"Read this":** reads the selection if there is one.
 - **Privacy:**
@@ -779,6 +788,7 @@ This rule is more load-bearing than it first appears, and it simplifies the thre
 
 - **Search is metadata-only.** A Spotlight query (as built, `MDQuery` on a background thread; `NSMetadataQuery` stalled the main thread) is used with name, kind, and date predicates. Content-scope search (`kMDItemTextContent`) is explicitly **not** used, because it would return matched text from inside documents. Set the query's value list to metadata attributes only and never request content.
 - **Results carry no previews, no thumbnails, no snippets.** The model receives names and dates, nothing more.
+- **Names as heard:** when the name search finds nothing, `FileNameMatcher` compares names by sound: a glued extension is split off ("12PDF" → "12 pdf"), number words next to numbers become digits ("to XQ 40 assignment 12" → `2xq40assignment12`), and file names are reduced to letters and digits. The closest name in the searched folders wins if it is at least 75% similar and clearly ahead of the next. This lists names only, never content. Used by `openFile` and `readFile`.
 - **"Open my invoice"** resolves by filename, kind and recency. It cannot resolve by "the file that mentions Acme", and the notch should say so plainly rather than guessing, because the alternative is the agent silently doing something less private than the user expects.
 - **Opening is a handoff.** `NSWorkspace.open` passes the file to Preview, Pages or whatever owns it. The agent's involvement ends at that call.
 
@@ -878,7 +888,7 @@ The tool registry therefore reads settings at session construction, every time.
 | Conversation | Talk with Alfred on/off; memory on/off; every remembered item with delete; forget everything |
 | Messages & Email | Contacts access; texts via Messages or WhatsApp; emails open in Gmail or Outlook |
 | Recording | Keep audio; include the other side of calls; transcripts folder; stop listening during calls |
-| Model & Voice | Apple Intelligence status; voice picker (Kokoro natural voices and system voices) with preview and the Kokoro download; speak responses (Always / Errors only / Never); duck audio while listening |
+| Model & Voice | Apple Intelligence status; voice picker (Kokoro natural voices and system voices) with preview and the Kokoro download; speak responses (Always / Errors only / Never); keep listening after a reply (Off / 3 / 4 / 5 s); noise filter; duck audio while listening |
 | Capabilities | One toggle per tool, generated from registry metadata; search engine; YouTube autoplay; weather city and attribution |
 | Routines | The user's routines: phrases, numbered steps (reordered with up/down arrows), closing line; on/off per routine; examples to start from |
 | Clock | Every alarm, each with an on/off switch (off alarms are kept but never ring), edit (time, name, days) and delete, plus Add Alarm; alarm and timer sounds with a Test button that rings the notch for real; running timers beside the notch on/off |

@@ -1,7 +1,7 @@
 /// Decides when a hands-free utterance has ended (spec §7). Hold-to-talk
 /// needs none of this: releasing the key is the endpoint.
 ///
-/// - 0.8 s below the speech threshold after speech ends the utterance.
+/// - 0.65 s below the speech threshold after speech ends the utterance.
 /// - 2 s with no speech at all cancels, without invoking the model.
 /// - 10 s is a hard cap.
 ///
@@ -16,7 +16,7 @@ public struct Endpointer: Sendable {
         case noSpeech
     }
 
-    public static let trailingSilence = 0.8
+    public static let trailingSilence = 0.65
     public static let noSpeechTimeout = 2.0
     public static let hardCap = 10.0
     static let calibration = 0.2

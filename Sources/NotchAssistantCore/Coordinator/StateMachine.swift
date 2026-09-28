@@ -60,7 +60,9 @@ public enum StateMachine {
             .alert(alert)
         case (.acting, .ask(let question)):
             .question(question)
-        case (.question, .activation), (.reply, .activation):
+        case (.question, .activation), (.reply, .activation), (.result, .activation), (.list, .activation), (.error, .activation):
+            // Answering, or saying something new while (or just after)
+            // Alfred speaks: it stops and listens.
             .listening(partial: "")
         case (.alert, .activation):
             // "Alfred, stop" / "Alfred, snooze": the sound stops as soon as

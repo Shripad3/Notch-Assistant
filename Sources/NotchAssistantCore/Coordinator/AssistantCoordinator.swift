@@ -80,23 +80,28 @@ public actor AssistantCoordinator {
         // Idle, answering a pending confirmation by voice, or stopping an
         // alert ("Alfred, stop").
         var answering = false
+        // Speaking over an outcome (or just after it): a new command.
+        var interrupting = false
         interruptedAlert = nil
         switch state {
         case .confirm, .question: answering = true
         case .reply where conversing: answering = true
+        case .result, .reply, .list, .error: interrupting = true
         case .alert(let alert):
             answering = true
             interruptedAlert = alert
         default: break
         }
-        guard state == .idle || answering, !isSuspended || interruptedAlert != nil else { return }
+        // Talking over Alfred only counts while it is saying something.
+        if wake?.isInterruption == true, state == .idle { return }
+        guard state == .idle || answering || interrupting, !isSuspended || interruptedAlert != nil else { return }
         if !answering {
             pendingConfirmation = nil
             followUpCommand = nil
             Confirmations.discard()
         }
         let now = ContinuousClock.now
-        if !answering, let lastTrigger, lastTrigger.duration(to: now) < .seconds(1) { return }
+        if !answering, !interrupting, let lastTrigger, lastTrigger.duration(to: now) < .seconds(1) { return }
         lastTrigger = now
         session += 1
         // Tokens from an earlier command can't be reused (spec §9).
@@ -204,6 +209,12 @@ public actor AssistantCoordinator {
             "that s all", "i m done", "done", "finish", "end it"].contains(AppNameMatcher.normalize(WakePhrase.commandAfterConfirmedWake(transcript))) {
             await apply(.endpoint(transcript), session: id)
             await apply(.textOnly(await LiveCapture.shared.stop()), session: id)
+            return
+        }
+        // "Stop" over Alfred, or "thanks" after it: nothing more to do.
+        if let wake, (wake.isInterruption && BargeIn.isJustStop(transcript))
+            || (wake.isLingering && ListenAfterReply.closings.contains(AppNameMatcher.normalize(transcript))) {
+            await apply(.silence, session: id)
             return
         }
         if let wake, wake.isFollowUp {
@@ -396,12 +407,16 @@ public actor AssistantCoordinator {
 
     private func apply(_ event: AssistantEvent, session id: Int) async {
         guard id == session, let next = StateMachine.transition(from: state, on: event) else { return }
+        let previous = state
         state = next
         if case .partial = event {} else {
             Log.coordinator.notice("→ \(String(describing: next), privacy: .public)")
         }
         scheduleDismissal(after: next, session: id)
         await presenter.render(next)
+        if Self.listensAfter(next, from: previous), !conversing {
+            Task { await self.listenAfterReply(to: next, session: id) }
+        }
         // Back to idle: any conversation is over; remember it.
         if next == .idle, conversing {
             conversing = false
@@ -411,6 +426,24 @@ public actor AssistantCoordinator {
         if next == .idle, !queuedAlerts.isEmpty {
             await ring(queuedAlerts.removeFirst())
         }
+    }
+
+    /// Outcomes after which Alfred keeps listening a few seconds without
+    /// the wake word. Not errors from starting to listen (no microphone),
+    /// which would only repeat.
+    static func listensAfter(_ state: AssistantState, from previous: AssistantState) -> Bool {
+        guard ListenAfterReply.seconds > 0 else { return false }
+        switch (previous, state) {
+        case (.listening, _), (.idle, _): return false
+        case (_, .result), (_, .reply), (_, .list), (_, .error): return true
+        default: return false
+        }
+    }
+
+    private func listenAfterReply(to outcome: AssistantState, session id: Int) async {
+        await presenter.finishedSpeaking()
+        guard id == session, state == outcome else { return }
+        await activationBegan(wake: .followUp(patience: ListenAfterReply.seconds, lingering: true))
     }
 
     private func dismiss(session id: Int) async {
@@ -444,8 +477,15 @@ public actor AssistantCoordinator {
         case .question: delay = .seconds(10)
         default: return
         }
+        let spoken: Bool = switch state {
+        case .result, .reply, .error: true
+        default: false
+        }
+        let presenter = presenter
         dismissal = Task {
             try? await Task.sleep(for: delay)
+            // A long answer stays up until it has been said.
+            if spoken { await presenter.finishedSpeaking() }
             guard !Task.isCancelled else { return }
             await self.dismiss(session: id)
         }

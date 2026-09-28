@@ -85,26 +85,47 @@ final class KokoroVoice: NeuralVoice {
         Task { _ = await load() }
     }
 
+    /// Speaks sentence by sentence: each piece is made while the one before
+    /// plays, so speech starts sooner and long replies stay within
+    /// Kokoro's limit (a long summary once fell back to a system voice).
     func speak(_ text: String) async -> Bool {
         guard isActive, let voice = chosenVoice, let manager = await load() else { return false }
-        do {
-            let wav = try await manager.synthesize(text: SpeechText.forNeuralVoice(text), voice: voice)
-            try Task.checkCancellation()
-            let player = try AVAudioPlayer(data: wav)
+        let pieces = SpeechText.pieces(SpeechText.forNeuralVoice(text))
+        guard !pieces.isEmpty else { return true }
+        func make(_ piece: String) -> Task<Data?, Never> {
+            Task {
+                do { return try await manager.synthesize(text: piece, voice: voice) } catch {
+                    Log.app.error("kokoro: \(error.localizedDescription, privacy: .public)")
+                    return nil
+                }
+            }
+        }
+        var next: Task<Data?, Never>? = make(pieces[0])
+        var spokeAny = false
+        for index in pieces.indices {
+            guard let current = next else { break }
+            let wav = await current.value
+            next = index + 1 < pieces.count ? make(pieces[index + 1]) : nil
+            if Task.isCancelled {
+                next?.cancel()
+                return true
+            }
+            // The first piece failing means the system voice should speak
+            // instead; a later one is skipped rather than switch voices.
+            guard let wav, let player = try? AVAudioPlayer(data: wav) else {
+                if !spokeAny { next?.cancel(); return false }
+                continue
+            }
             player.delegate = delegate
             self.player = player
+            spokeAny = true
             await withCheckedContinuation { continuation in
                 speaking = continuation
                 if !player.play() { finished() }
             }
-            scheduleUnload()
-            return true
-        } catch is CancellationError {
-            return true
-        } catch {
-            Log.app.error("kokoro: \(error.localizedDescription, privacy: .public)")
-            return false
         }
+        scheduleUnload()
+        return true
     }
 
     func stop() {

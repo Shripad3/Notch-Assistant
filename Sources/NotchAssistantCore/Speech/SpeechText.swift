@@ -32,6 +32,42 @@ public enum SpeechText {
     /// after it ends the sentence). Two groups: the letter, either way.
     private static let meridiem = #"(?:([AaPp])\.\s?[Mm]\.|([AaPp])\s?[Mm])(?![A-Za-z])"#
 
+    /// Short pieces for a neural voice, at sentence ends, then commas, then
+    /// words: Kokoro takes at most about 500 phonemes at once, and speaking
+    /// the first piece while the next is made starts the reply sooner.
+    public static func pieces(_ text: String, maximum: Int = 180) -> [String] {
+        var sentences: [String] = []
+        var current = ""
+        for char in text {
+            current.append(char)
+            if ".?!;\n".contains(char) {
+                sentences.append(current)
+                current = ""
+            }
+        }
+        sentences.append(current)
+        var pieces: [String] = []
+        for sentence in sentences.map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) }) where !sentence.isEmpty {
+            if sentence.count <= maximum {
+                pieces.append(sentence)
+                continue
+            }
+            // Too long: at commas, then by words.
+            var part = ""
+            for word in sentence.split(separator: " ") {
+                let candidate = part.isEmpty ? String(word) : part + " " + word
+                if candidate.count > maximum || (part.hasSuffix(",") && part.count > maximum / 2) {
+                    pieces.append(part)
+                    part = String(word)
+                } else {
+                    part = candidate
+                }
+            }
+            if !part.isEmpty { pieces.append(part) }
+        }
+        return pieces
+    }
+
     /// "7 A M", "6 30 PM", "7 oh 5 A M", "12 noon", "midnight". Without am/pm
     /// the time is 24-hour (as on a Mac set to 24-hour time).
     static func clockTime(hour: Int, minute: Int, meridiem: String) -> String {

@@ -233,13 +233,21 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
 
     /// One detection per stretch of audio, however many times the recognizer
     /// revises its text ("Hey Al…", "Hey Alfred", "Hey Alfred, open…").
+    /// Also hears the user talking over Alfred (see `BargeIn`).
     private func received(_ text: String, range: CMTimeRange) {
-        guard WakeDeduplicator.isNew(range, handledThrough: handledThrough),
-              Date() >= quietUntil, WakePhrase.contains(text) else { return }
+        guard WakeDeduplicator.isNew(range, handledThrough: handledThrough), Date() >= quietUntil else { return }
+        let wake = WakePhrase.contains(text)
+        guard wake || BargeIn.isInterruption(text) else { return }
         handledThrough = CMTimeMaximum(handledThrough, range.end)
         quietUntil = Date().addingTimeInterval(Self.refractory)
-        Log.speech.notice("wake word: heard \"\(text, privacy: .public)\"")
-        onDetect(WakeContext(preroll: history.preroll, ambientFloor: history.ambientFloor(), score: 1, confirmed: true))
+        if wake {
+            Log.speech.notice("wake word: heard \"\(text, privacy: .public)\"")
+            onDetect(WakeContext(preroll: history.preroll, ambientFloor: history.ambientFloor(), score: 1, confirmed: true))
+        } else {
+            Log.speech.notice("wake word: interrupted by \"\(text, privacy: .public)\"")
+            BargeIn.ended()
+            onDetect(.interruption(preroll: history.preroll, ambientFloor: history.ambientFloor()))
+        }
     }
 
     private func convert(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) -> AVAudioPCMBuffer? {

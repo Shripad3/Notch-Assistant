@@ -58,9 +58,15 @@ struct StateMachineTests {
         #expect(StateMachine.transition(from: .thinking(transcript: "x"), on: .dismiss) == nil)
     }
 
-    @Test func activationOnlyFromIdle() {
+    @Test func activationNotWhileWorking() {
         #expect(StateMachine.transition(from: .thinking(transcript: "x"), on: .activation) == nil)
-        #expect(StateMachine.transition(from: .result("x"), on: .activation) == nil)
+        #expect(StateMachine.transition(from: .acting(tool: ToolLabel(name: "t", title: "T", symbol: "x"), target: ""), on: .activation) == nil)
+    }
+
+    @Test func speakingOverAnOutcomeListens() {
+        for state: AssistantState in [.result("x"), .reply("x"), .list("x", []), .error(failure)] {
+            #expect(StateMachine.transition(from: state, on: .activation) == .listening(partial: ""))
+        }
     }
 
     @Test func latePartialAfterEndpointIsIgnored() {

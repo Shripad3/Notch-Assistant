@@ -21,3 +21,17 @@ struct SpeechTextTests {
         #expect(SpeechText.forNeuralVoice(display) == spoken)
     }
 }
+
+struct SpeechPiecesTests {
+    @Test func longRepliesAreSplitForTheNaturalVoice() {
+        let long = "This document describes a structured-output schema for a tool that can be used to generate a plan of action for a user, including every step, its arguments, and the order in which they run, which the assistant then executes. It has three parts. Done!"
+        let pieces = SpeechText.pieces(long)
+        #expect(pieces.allSatisfy { $0.count <= 180 })
+        #expect(pieces.joined(separator: " ").split(separator: " ") == long.split(separator: " "))
+        #expect(pieces.last == "Done!")
+    }
+
+    @Test func shortRepliesStayWhole() {
+        #expect(SpeechText.pieces("Timer set for 10 minutes") == ["Timer set for 10 minutes"])
+    }
+}

@@ -208,6 +208,7 @@ private struct ModelPane: View {
     @AppStorage(SpokenResponses.defaultsKey) private var spoken = SpokenResponses.errorsOnly.rawValue
     @AppStorage("audio.duckWhileListening") private var duck = true
     @AppStorage(VoiceProcessing.key) private var voiceProcessing = true
+    @AppStorage(ListenAfterReply.key) private var listenAfter = 4.0
     @AppStorage(VoiceOption.defaultsKey) private var voiceID = ""
     @State private var voices = VoiceOption.available()
     @State private var preview = Speaker()
@@ -219,6 +220,15 @@ private struct ModelPane: View {
                 LabeledContent("Backend", value: "Apple Foundation Models, on this Mac")
             } footer: {
                 Text("The MLX backend needs macOS 27.")
+            }
+            Section {
+                Picker("Keep listening after a reply", selection: $listenAfter) {
+                    ForEach(ListenAfterReply.choices, id: \.self) { seconds in
+                        Text(seconds == 0 ? "Off" : "\(Int(seconds)) seconds").tag(seconds)
+                    }
+                }
+            } footer: {
+                Text("After Alfred answers or does something, it listens this long without “Alfred”, so you can go on. “Thanks” or silence ends it. You can always interrupt: say “Alfred” while it talks, or, with the filter below on, just start speaking.")
             }
             Section {
                 Toggle("Filter out music and background noise", isOn: $voiceProcessing)

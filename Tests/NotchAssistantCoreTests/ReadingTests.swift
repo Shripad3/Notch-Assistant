@@ -280,3 +280,41 @@ struct ReadPhraseTests {
         #expect(ContentRequests.refusal(for: "summarise my essay") == nil)
     }
 }
+
+struct FileNameMatcherTests {
+    let files = ["2XQ40-assignment12.pdf", "2XQ40-lecture03.pdf", "assignment-notes.docx", "Tax return 2025.pdf"]
+        .map { URL(filePath: "/tmp/names/\($0)") }
+
+    @Test(arguments: ["to XQ 40 assignment 12PDF", "two XQ40 assignment 12PDF", "2 XQ 40 assignment 12 pdf", "the file 2XQ40 assignment 12"])
+    func heardNamesFindTheFile(_ spoken: String) {
+        #expect(FileNameMatcher.best(for: spoken, among: files)?.lastPathComponent == "2XQ40-assignment12.pdf")
+    }
+
+    @Test func gluedExtensionsAreSeparated() {
+        #expect(FileNameMatcher.separateExtension("assignment 12PDF") == "assignment 12 PDF")
+    }
+
+    @Test func toBetweenWordsStaysAWord() {
+        #expect(FileNameMatcher.spokenKey("notes to self").key == "notestoself")
+    }
+
+    @Test func unrelatedNamesDontMatch() {
+        #expect(FileNameMatcher.best(for: "holiday photos", among: files) == nil)
+    }
+
+    @Test(arguments: ["this", "the document which is open", "the open document", "my current pdf", "the document that s open", "the file on my screen"])
+    func phrasesForTheOpenDocument(_ phrase: String) {
+        #expect(ReadFileTool.refersToFront(AppNameMatcher.normalize(phrase)))
+    }
+
+    @Test func aNamedDocumentIsNotTheOpenOne() {
+        #expect(!ReadFileTool.refersToFront("the lease document"))
+    }
+
+    @Test func fillersDontHideDirectPhrasings() {
+        let command = DirectCommand("Can you summarise 2XQ40-assignment12.pdf")
+        #expect(command?.original == "summarise 2XQ40-assignment12.pdf")
+        let arguments = command.flatMap(ReadFileTool().directArguments(for:))
+        #expect(arguments?.action == "summarize")
+    }
+}

@@ -5,7 +5,7 @@ import Speech
 public actor SystemSTT: TranscriptionService {
     /// How long `finish()` waits for the recognizer's final result before
     /// settling for the last partial.
-    private static let finalResultGrace: Duration = .milliseconds(1500)
+    private static let finalResultGrace: Duration = .milliseconds(700)
 
     private let engine = AVAudioEngine()
     private var recognizer: SFSpeechRecognizer?

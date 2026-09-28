@@ -20,7 +20,7 @@ struct EndpointerTests {
         var endpointer = Endpointer(ambientFloor: -50)
         let result = run(&endpointer, [(-20, 1.5), (-50, 2)])
         #expect(result?.0 == .endOfSpeech)
-        #expect(abs((result?.1 ?? 0) - 2.3) < 0.05)
+        #expect(abs((result?.1 ?? 0) - (1.5 + Endpointer.trailingSilence)) < 0.05)
     }
 
     @Test func shortPauseInsideSpeechDoesNotEnd() {

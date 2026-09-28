@@ -169,7 +169,7 @@ struct NotchExpandedView: View {
     private var detail: String? {
         switch status.state {
         case .alert(let alert): alert.message
-        case .listening(let partial): partial.isEmpty ? nil : partial
+        case .listening(let partial): partial.isEmpty ? status.previousOutcome : partial
         case .thinking(let transcript): "“\(transcript)”"
         case .acting(_, let target): target.isEmpty ? nil : target
         default: nil

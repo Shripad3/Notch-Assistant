@@ -20,6 +20,10 @@ public final class WakeContext: @unchecked Sendable, Equatable {
     /// An answer to Alfred (a question or a conversation), not a command
     /// after the wake word: kept exactly as said.
     public private(set) var isFollowUp = false
+    /// Started by talking over Alfred rather than by the wake word.
+    public private(set) var isInterruption = false
+    /// The quiet listen after an answer: filler ("thanks") closes it.
+    public private(set) var isLingering = false
 
     /// A hands-free start with no wake word (an open-palm gesture): no
     /// pre-roll, and the endpointer measures the room itself.
@@ -28,10 +32,19 @@ public final class WakeContext: @unchecked Sendable, Equatable {
     }
 
     /// Listening for the answer to Alfred's own question ("For when?").
-    public static func followUp() -> WakeContext {
+    public static func followUp(patience: Double = 6, lingering: Bool = false) -> WakeContext {
         let context = WakeContext(preroll: [], ambientFloor: .nan, score: 1, confirmed: true)
-        context.patience = 6
+        context.patience = patience
         context.isFollowUp = true
+        context.isLingering = lingering
+        return context
+    }
+
+    /// The user talking over Alfred: their first words are in the pre-roll.
+    static func interruption(preroll: [AVAudioPCMBuffer], ambientFloor: Float) -> WakeContext {
+        let context = WakeContext(preroll: preroll, ambientFloor: ambientFloor, score: 1, confirmed: true)
+        context.isFollowUp = true
+        context.isInterruption = true
         return context
     }
 

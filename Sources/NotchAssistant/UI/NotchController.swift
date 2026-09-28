@@ -61,6 +61,16 @@ final class NotchController: NotchPresenter {
 
     func render(_ state: AssistantState) {
         if case .listening = state {} else { status.resetLevel() }
+        switch (status.state, state) {
+        case (.result(let text), .listening), (.reply(let text), .listening), (.list(let text, _), .listening):
+            status.previousOutcome = text
+        case (.error(let failure), .listening):
+            status.previousOutcome = failure.message
+        case (.listening, .listening):
+            break
+        default:
+            status.previousOutcome = nil
+        }
         status.state = state
         onChange?(state)
         refresh()
