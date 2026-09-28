@@ -99,6 +99,7 @@ private struct ActivationPane: View {
     @State private var models: [String] = []
     @State private var accents: [Locale] = []
     @AppStorage(AppDelegate.gesturesKey) private var gesturesEnabled = false
+    @AppStorage("gesture.hold") private var gestureHold = 5
     @State private var openAtLogin = LoginItem.isEnabled || LoginItem.needsApproval
     @State private var loginNeedsApproval = LoginItem.needsApproval
 
@@ -125,12 +126,16 @@ private struct ActivationPane: View {
             Section {
                 Toggle("Hand gestures", isOn: $gesturesEnabled)
                 if gesturesEnabled {
+                    Picker("Hold for", selection: $gestureHold) {
+                        Text("Half a second").tag(5)
+                        Text("One second (fewer mistakes)").tag(10)
+                    }
                     LabeledContent("Status", value: status.gestureStatus)
                 }
             } header: {
                 Text("Gestures")
             } footer: {
-                Text("Hold an open palm towards the camera for half a second to start listening, like saying “Alfred”. Make a fist to cancel, like Escape. Uses the camera continuously, so its green light stays on and it costs more energy than the wake word; it pauses on battery and when the Mac is hot. Nothing is recorded or stored.")
+                Text("Hold an open palm towards the camera, still and within arm's reach, to start listening, like saying “Alfred”. Make a fist to cancel, like Escape. Hands further away and moving hands are ignored. Uses the camera continuously, so its green light stays on and it costs more energy than the wake word; it pauses on battery and when the Mac is hot. Nothing is recorded or stored. Changes apply when gestures are next turned on.")
             }
             Section {
                 LabeledContent("Hold to talk", value: "⌥ Space")

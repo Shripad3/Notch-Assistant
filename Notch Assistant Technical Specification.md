@@ -252,7 +252,11 @@ Mitigations, all required if the feature ships: cap capture at 10 fps, downscale
 - **Classification** (`HandJoints`, from the four fingers, ignoring the thumb):
   - *open palm* when every fingertip is well beyond both its middle joint and its knuckle, measured from the wrist;
   - *fist* when every fingertip is nearer the wrist than its middle joint.
-- **Confirmation:** stricter than the two frames above. A gesture must be held for 5 consecutive frames (half a second), then there is a 3 s cooldown (`GestureDebouncer`).
+- **Confirmation:** stricter than the two frames above. A gesture must be held for 5 consecutive frames (half a second; 10 frames, one second, is a setting), then there is a 3 s cooldown (`GestureDebouncer`).
+- **False-trigger rules (28 Sep 2026):**
+  - the hand must be close to the camera: wrist to middle knuckle at least 7% of the frame, so people behind the user don't count;
+  - it must be still: the wrist may drift at most 6% of the frame during the hold, so waves and stretches don't count;
+  - every joint needs confidence above 0.6.
 - **What each does:**
   - An open palm starts a hands-free session like the wake word, but with no pre-roll, and the endpointer measures the room itself.
   - A fist is the same as Escape.
@@ -1100,7 +1104,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 360 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 365 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist

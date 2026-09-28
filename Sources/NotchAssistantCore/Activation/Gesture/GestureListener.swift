@@ -69,7 +69,7 @@ public final class GestureListener: NSObject, AVCaptureVideoDataOutputSampleBuff
         let handler = VNImageRequestHandler(cmSampleBuffer: sampleBuffer, orientation: .up)
         try? handler.perform([request])
         let joints = request.results?.first.flatMap(Self.joints)
-        if let gesture = debouncer.feed(joints?.gesture(), at: now) {
+        if let gesture = debouncer.feed(joints?.gesture(), wrist: joints?.wrist, size: joints?.size ?? 0, at: now) {
             Log.app.notice("gestures: \(String(describing: gesture), privacy: .public)")
             onGesture(gesture)
         }
@@ -78,7 +78,7 @@ public final class GestureListener: NSObject, AVCaptureVideoDataOutputSampleBuff
     private static func joints(_ observation: VNHumanHandPoseObservation) -> HandJoints? {
         guard let points = try? observation.recognizedPoints(.all) else { return nil }
         func point(_ name: VNHumanHandPoseObservation.JointName) -> CGPoint? {
-            guard let p = points[name], p.confidence > 0.5 else { return nil }
+            guard let p = points[name], p.confidence > 0.6 else { return nil }
             return p.location
         }
         let names: [(VNHumanHandPoseObservation.JointName, VNHumanHandPoseObservation.JointName, VNHumanHandPoseObservation.JointName)] = [

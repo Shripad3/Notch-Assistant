@@ -154,3 +154,41 @@ struct GestureTests {
         #expect(debouncer.feed(.openPalm, at: start.addingTimeInterval(0.5)) == nil)
     }
 }
+
+struct GestureReliabilityTests {
+    let start = Date()
+
+    func hold(_ debouncer: inout GestureDebouncer, frames: Int, wrist: (Int) -> CGPoint, size: CGFloat) -> [HandGesture] {
+        var fired: [HandGesture] = []
+        for frame in 0..<frames {
+            if let gesture = debouncer.feed(.openPalm, wrist: wrist(frame), size: size, at: start.addingTimeInterval(Double(frame) * 0.1)) {
+                fired.append(gesture)
+            }
+        }
+        return fired
+    }
+
+    @Test func aStillCloseHandFires() {
+        var debouncer = GestureDebouncer()
+        debouncer.framesRequired = 5
+        #expect(hold(&debouncer, frames: 5, wrist: { _ in CGPoint(x: 0.5, y: 0.3) }, size: 0.12) == [.openPalm])
+    }
+
+    @Test func farAwayHandsAreIgnored() {
+        var debouncer = GestureDebouncer()
+        debouncer.framesRequired = 5
+        #expect(hold(&debouncer, frames: 10, wrist: { _ in CGPoint(x: 0.5, y: 0.3) }, size: 0.03).isEmpty)
+    }
+
+    @Test func wavingIsIgnored() {
+        var debouncer = GestureDebouncer()
+        debouncer.framesRequired = 5
+        // Side to side across a fifth of the frame every frame.
+        #expect(hold(&debouncer, frames: 12, wrist: { CGPoint(x: $0.isMultiple(of: 2) ? 0.4 : 0.6, y: 0.3) }, size: 0.12).isEmpty)
+    }
+
+    @Test func handSizeIsWristToMiddleKnuckle() {
+        let hand = GestureTests.hand(extended: true)
+        #expect(abs(hand.size - hypot(0.02, 0.15)) < 0.0001)
+    }
+}
