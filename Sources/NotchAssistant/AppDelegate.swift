@@ -23,6 +23,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let gesturesKey = "gesture.enabled"
     static let pauseDuringCallsKey = "wake.pauseDuringCalls"
     private var callWatch: Timer?
+    /// Starting and stopping the wake word, one after another: a short call
+    /// must not have its stop and restart overlap.
+    private var wakeTransition: Task<Void, Never>?
+    private var wakeRetries = 0
     private var gestures: GestureListener?
 
     func showSettings() {
@@ -314,7 +318,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard wanted else {
             status.wakeStatus = enabled ? .paused(reason ?? "") : .off
-            Task { await previous?.stop() }
+            let before = wakeTransition
+            wakeTransition = Task {
+                await before?.value
+                await previous?.stop()
+            }
             return
         }
         do {
@@ -338,14 +346,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let listener = wakeListener
         status.wakeStatus = .paused("starting…")
-        Task { [weak self] in
+        let before = wakeTransition
+        wakeTransition = Task { [weak self] in
+            await before?.value
             if previous !== listener { await previous?.stop() }
             do {
                 try await listener?.start()
                 self?.status.wakeStatus = .listening
+                self?.wakeRetries = 0
             } catch {
+                Log.app.error("wake word: start failed: \(error.localizedDescription, privacy: .public)")
                 self?.status.wakeStatus = .unavailable(AssistantFailure(error).message)
                 self?.wakeWanted = false
+                // Often the microphone is still being handed back (after a
+                // call, or a headset switch): try again shortly.
+                guard let self, self.wakeRetries < 5 else { return }
+                self.wakeRetries += 1
+                try? await Task.sleep(for: .seconds(3))
+                self.updateWakeWord()
             }
         }
     }

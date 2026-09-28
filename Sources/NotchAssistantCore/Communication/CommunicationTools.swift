@@ -397,60 +397,85 @@ struct EmailTool: AssistantTool {
     }
 }
 
-/// FaceTime's "Call" confirmation for calls started from a link. Found and
-/// pressed through Accessibility, after the user has confirmed in Alfred.
+/// The "Call" confirmation macOS shows for calls started from a link, found
+/// and pressed through Accessibility after the user has confirmed in Alfred.
+/// It can be a FaceTime window or a notification banner, which belongs to
+/// Notification Center; a banner's buttons are often named actions on the
+/// notification rather than buttons.
 enum CallPrompt {
     private static let titles = ["Call", "FaceTime", "FaceTime Audio", "Audio"]
+    private static let owners = ["com.apple.FaceTime", "com.apple.notificationcenterui"]
 
-    /// Waits up to 6 s for FaceTime's prompt; true once Call is pressed.
+    /// Something pressable: a button, or a named action on an element.
+    private struct Target {
+        let element: AXUIElement
+        let label: String
+        /// Nil for a button (AXPress); otherwise the action's full name.
+        let action: String?
+    }
+
+    /// Waits up to 8 s for the prompt; true once Call is pressed.
     static func pressCall() async -> Bool {
         guard AXIsProcessTrusted() else { return false }
-        let deadline = ContinuousClock.now + .seconds(6)
+        let deadline = ContinuousClock.now + .seconds(8)
+        var seen: [String] = []
         while ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(250))
             // Found and pressed on the main actor: Accessibility elements
             // can't cross actors.
-            let pressed: String? = await MainActor.run {
-                guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.FaceTime").first else { return nil }
-                let root = AXUIElementCreateApplication(app.processIdentifier)
-                AXUIElementSetMessagingTimeout(root, 0.5)
-                var buttons: [(AXUIElement, String)] = []
-                collectButtons(root, depth: 0, into: &buttons)
-                // "Call" first; the others only when it's the prompt's only choice.
+            let (pressed, labels): (String?, [String]) = await MainActor.run {
+                var targets: [Target] = []
+                for owner in owners {
+                    guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: owner).first else { continue }
+                    let root = AXUIElementCreateApplication(app.processIdentifier)
+                    AXUIElementSetMessagingTimeout(root, 0.5)
+                    collect(root, depth: 0, into: &targets)
+                }
+                // "Call" first; the others only when they're the only choice.
                 for title in titles {
-                    if let match = buttons.first(where: { $0.1 == title }),
-                       AXUIElementPerformAction(match.0, kAXPressAction as CFString) == .success {
-                        return title
+                    for target in targets where target.label == title {
+                        let result = AXUIElementPerformAction(target.element, (target.action ?? kAXPressAction) as CFString)
+                        if result == .success { return (title, []) }
                     }
                 }
-                return nil
+                return (nil, targets.map(\.label))
             }
             if let pressed {
-                Log.tools.notice("call: pressed FaceTime's \(pressed, privacy: .public) button")
+                Log.tools.notice("call: pressed \(pressed, privacy: .public)")
                 return true
             }
+            seen = labels
         }
-        Log.tools.notice("call: FaceTime's call button wasn't found")
+        // For diagnosis: what was there instead.
+        Log.tools.notice("call: no Call button; saw \(seen.prefix(25).joined(separator: " | "), privacy: .public)")
         return false
     }
 
     @MainActor
-    private static func collectButtons(_ element: AXUIElement, depth: Int, into buttons: inout [(AXUIElement, String)]) {
-        guard depth < 9, buttons.count < 60 else { return }
+    private static func collect(_ element: AXUIElement, depth: Int, into targets: inout [Target]) {
+        guard depth < 12, targets.count < 120 else { return }
         var role: CFTypeRef?
         AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
         if (role as? String) == "AXButton" {
             for attribute in [kAXTitleAttribute, kAXDescriptionAttribute] {
                 var value: CFTypeRef?
                 if AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success, let text = value as? String, !text.isEmpty {
-                    buttons.append((element, text))
+                    targets.append(Target(element: element, label: text, action: nil))
                     break
                 }
+            }
+        }
+        // Notification actions: "Name:Call\nTarget:…\nSelector:…".
+        var names: CFArray?
+        if AXUIElementCopyActionNames(element, &names) == .success, let actions = names as? [String] {
+            for action in actions where action.hasPrefix("Name:") {
+                let label = action.dropFirst("Name:".count).split(separator: "\n").first.map(String.init) ?? ""
+                if !label.isEmpty { targets.append(Target(element: element, label: label, action: action)) }
             }
         }
         var children: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &children) == .success,
               let list = children as? [AXUIElement] else { return }
-        for child in list { collectButtons(child, depth: depth + 1, into: &buttons) }
+        for child in list { collect(child, depth: depth + 1, into: &targets) }
     }
 }
