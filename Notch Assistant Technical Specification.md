@@ -31,7 +31,7 @@ The requirement is **no cloud AI**, not *no network*. Inference is local: no API
 - **No cross-session memory** (v1). Context lasts one activation. *Revised 27 Sep 2026:* opt-in, local conversation memory is planned (see "Next: agreed on 27 Sep 2026" under Implementation phases).
 - **No text chat interface.** The notch is not a chat window.
 - **No distribution (for now).** One machine, signed with the owner's Apple Developer account (needed for the WeatherKit entitlement, §9). Publishing later means a Developer ID build with notarisation; the Mac App Store is out, because the app cannot run sandboxed (§13).
-- **No screen understanding.** No screenshots, no vision models over the display. The camera is used for hand pose only.
+- **No ambient screen understanding.** *Revised 28 Sep 2026:* the screen is read only when asked ("what does this error say"), never on a schedule, and nothing read is stored. The camera is used for hand pose only.
 - **No arbitrary shell execution.** The model must never be given a `runCommand` tool. This is a hard security boundary, not a deferred feature.
 
 ### Departures from the original design
@@ -398,6 +398,7 @@ Every tool conforms to `AssistantTool`: a name, a description the model reads, a
 | `screenshot` | `target`, `app?` | No | Screen & System Audio Recording | n/a | after v3 |
 | `recordScreen` | `action`, `sound?`, `voice?` | No | Screen & System Audio Recording, Microphone | n/a | after v3 |
 | `readFile` | `action`, `file?`, `question?`, `part?`, `measure?` | No | Files and Folders | n/a — read-only | after v3 |
+| `readScreen` | `action`, `question?` | No | Accessibility (+ Screen Recording for the fallback) | n/a — read-only | after v3 |
 | `memory` | `action` | No | None | Forget-all confirmed | after v3 |
 | `currentTime` | `what`, `place?` | Only for a place | None | n/a | after v3 |
 | `calendar` | `action`, `when?` | Google/Outlook only | Calendar | n/a — read-only | after v3 |
@@ -601,6 +602,21 @@ Both use ScreenCaptureKit rather than `screencapture` (no shell), and always exc
 - `SecretRedactor` removes passwords, keys and tokens from every answer.
 - Organising still refuses to choose files by their contents.
 - `ContentRequests` now refuses requests to *edit* a file ("edit my essay", "fix the typo in …") instead of requests to read.
+
+### readScreen: understanding the screen
+
+"What's on my screen", "what does this error say", "read this to me", "what's this app asking me", "summarise this page".
+
+- **Source:** the front window's text through Accessibility first. It's exact and cheap. Electron and Chromium are asked for their tree with `AXManualAccessibility`, and a subtree snapshot of up to 3,000 nodes is copied on the main actor.
+- **Fallback:** when the tree yields under 120 characters (canvas apps, games, video, remote desktops), Alfred recognises text in a ScreenCaptureKit capture of the window with Vision.
+- **"Read this":** reads the selection if there is one.
+- **Privacy:**
+  - only on an explicit command;
+  - password fields are skipped without their value ever being copied;
+  - `SecretRedactor` removes passwords and tokens;
+  - nothing goes into memory, the read log or transcripts;
+  - the notch shows "Reading the screen".
+- **Tests:** a native dialog is read with no recognition call; a thin tree falls back to recognition; password fields and secrets never appear.
 
 ### Undo history
 
@@ -1075,7 +1091,7 @@ The protocol boundaries in §3 exist so that most of the app is testable without
 - **Tools.** Each `AssistantTool` tested directly with fixture arguments. `openApp` fuzzy matching gets a table of spoken names and expected bundle IDs, including the ones that should fail.
 - **State machine.** Every transition in §4, including cancellation from each non-idle state.
 - **DisplayResolver.** Injected fake screen lists: built-in only, built-in plus external, external only, empty. The last case is the clamshell path and must not crash.
-- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 355 tests in total.
+- **Intent parsing.** A fixture corpus of roughly 50 transcripts mapped to expected tool-call sequences, run against the real Foundation Models backend. This is the regression suite that matters most — it is what tells you whether a prompt change helped. As built: `Tests/Fixtures/intents.txt`, plus deterministic tests of `DirectMatcher`, `ToolRouter`, grounding, routine matching and time parsing that need no model. About 360 tests in total.
 - **Endpointer.** Recorded audio fixtures at several noise floors.
 
 ### Manual checklist

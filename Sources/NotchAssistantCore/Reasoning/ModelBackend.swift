@@ -61,14 +61,10 @@ public protocol ChatSession: Sendable {
 /// Which backend each task uses. Today every task uses Apple's on-device
 /// model; this is where a larger local model would be plugged in.
 public enum ModelRouter {
-    private static let override = Mutex<(any ModelBackend)?>(nil)
+    /// Tests: one backend for every task, within the current task only.
+    @TaskLocal static var override: (any ModelBackend)?
 
     public static func backend(for task: ModelTask) -> any ModelBackend {
-        override.withLock { $0 } ?? AppleFoundationBackend.shared
-    }
-
-    /// Tests and previews: one backend for every task (nil restores).
-    static func use(_ backend: (any ModelBackend)?) {
-        override.withLock { $0 = backend }
+        override ?? AppleFoundationBackend.shared
     }
 }

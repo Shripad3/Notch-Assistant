@@ -48,6 +48,8 @@ public struct ToolRegistry: Sendable {
         // "move" and "put"; before files, whose "move" needs a folder.
         AnyAssistantTool(CalendarEventTool()),
         // After openApp and openURL: "open spotify" must stay an app.
+        // Before reading files: "summarise this page" is the screen.
+        AnyAssistantTool(ScreenReadTool()),
         // Before opening and finding: "summarise the contract", "which file mentions X".
         AnyAssistantTool(ReadFileTool()),
         AnyAssistantTool(OpenFileTool()),

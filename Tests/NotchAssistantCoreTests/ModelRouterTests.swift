@@ -51,9 +51,9 @@ struct ModelRouterTests {
 
     @Test func conversationGoesThroughTheRouter() async throws {
         let fake = FakeBackend()
-        ModelRouter.use(fake)
-        defer { ModelRouter.use(nil) }
-        let reply = try await Conversation.scratch().reply(to: "I had a long day")
+        let reply = try await ModelRouter.$override.withValue(fake) {
+            try await Conversation.scratch().reply(to: "I had a long day")
+        }
         #expect(reply == "Sounds like a long one.")
         #expect(fake.prompts.withLock { $0 } == ["I had a long day"])
     }

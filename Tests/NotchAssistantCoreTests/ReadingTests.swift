@@ -194,14 +194,14 @@ struct ReadingAccessTests {
 struct DocumentReaderTests {
     @Test func longDocumentsAreSummarisedInPartsNotCutOff() async throws {
         let fake = FakeBackend(answer: "A part summary.")
-        ModelRouter.use(fake)
-        defer { ModelRouter.use(nil) }
         let sections = (1...9).map { ExtractedDocument.Section(label: "Page \($0)", text: String(repeating: "Sentence about page \($0). ", count: 150)) }
         let document = ExtractedDocument(name: "long.pdf", sections: sections, unit: "pages", rows: nil, recognizedPages: 0)
         let chunks = ContentChunker.chunks(document)
         #expect(chunks.count > 1)
         let progress = LockedList()
-        let summary = try await DocumentReader.summarize(document) { progress.append($0) }
+        let summary = try await ModelRouter.$override.withValue(fake) {
+            try await DocumentReader.summarize(document) { progress.append($0) }
+        }
         #expect(summary == "A part summary.")
         // One call per part, then one to combine: nothing skipped.
         #expect(fake.prompts.withLock { $0.count } == chunks.count + 1)
