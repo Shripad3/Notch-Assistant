@@ -106,8 +106,11 @@ struct TranscribeTool: AssistantTool {
         let stops = ["stop transcribing", "stop recording", "stop the recording", "end the recording", "stop the transcript", "finish recording"]
         if stops.contains(where: text.hasPrefix) { return TranscribeArguments(action: "stop") }
         if starts.contains(where: text.hasPrefix) { return TranscribeArguments(action: "start") }
+        let words = Set(text.split(separator: " ").map(String.init))
+        // Whole words: "summarise the document that's open" is a document.
         if ["summarise", "summarize", "sum up"].contains(where: text.hasPrefix),
-           ["meeting", "transcript", "recording", "call", "that"].contains(where: text.contains) {
+           words.isDisjoint(with: ["document", "file", "pdf", "doc", "page", "article", "paper", "report", "slides", "presentation"]),
+           !words.isDisjoint(with: ["meeting", "transcript", "recording", "call", "that"]) {
             return TranscribeArguments(action: "summarize")
         }
         return nil

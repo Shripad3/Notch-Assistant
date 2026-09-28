@@ -236,6 +236,7 @@ Run detection on a dedicated low-priority queue at 16 kHz mono. On detection, em
 - Detections are de-duplicated by audio time, because the volatile and final results both report the same word.
 - A detection from this engine is already confirmed, so the second-stage check is skipped; common mishearings of the wake word are stripped from the command.
 - The openWakeWord path (`WakeWordDetector`, ONNX Runtime) remains selectable in Settings.
+- **Watchdog:** the audio engine can report a successful start while Core Audio failed to start the microphone ("StartIO … error 35"), leaving the listener deaf with the toggle on. If no audio arrives for 4 s, the listener restarts, from a fresh task and only if nothing stopped it in the meantime. After two deaf starts with the noise filter on, voice processing is switched off until the app restarts, and the plain microphone is used. After five, it gives up and logs it.
 
 ### Gestures
 
@@ -581,7 +582,7 @@ Both use ScreenCaptureKit rather than `screencapture` (no shell), and always exc
 
 ### readFile: reading documents
 
-"Summarise this" (also "the document that's open", "my current PDF": the document in the front window, from Accessibility's `AXDocument`, else the last file read), "summarise the contract", "summarise pages 1 to 10 of the report", "what does my lease say about pets", "what's the total on that invoice", "read page 3 of the report", "how many pages/words/rows in …", "find the file that mentions Hetzner", "what have you read?".
+"Summarise this" (also "the document that's open", "my current PDF": the document in the front window, from Accessibility's `AXDocument`; for viewers that don't report it, a file in the allowed folders named exactly like a piece of the window title ("report.pdf – Page 3 of 9"); else the last file read), "summarise the contract", "summarise pages 1 to 10 of the report", "what does my lease say about pets", "what's the total on that invoice", "read page 3 of the report", "how many pages/words/rows in …", "find the file that mentions Hetzner", "what have you read?".
 
 **Scope (`ReadingAccess`).**
 - **Allowed folders:** Documents, Downloads and Desktop by default, editable in Settings › Files. A file elsewhere gets an offer to allow its folder, confirmed by "yes". The app isn't sandboxed, so these are paths, not security-scoped bookmarks.

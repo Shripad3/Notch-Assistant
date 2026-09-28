@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import Synchronization
 
 /// Apple's voice processing on the microphone: echo cancellation (music or
 /// a video playing from the Mac is removed from what Alfred hears) and
@@ -7,7 +8,17 @@
 /// people's voices. A setting, on by default.
 public enum VoiceProcessing {
     public static let key = "audio.voiceProcessing"
-    public static var isEnabled: Bool { UserDefaults.standard.object(forKey: key) as? Bool ?? true }
+    /// Chosen in Settings and not found broken this session.
+    public static var isEnabled: Bool { (UserDefaults.standard.object(forKey: key) as? Bool ?? true) && !failed.withLock { $0 } }
+
+    /// Set when the microphone wouldn't deliver audio with voice processing
+    /// on (Core Audio "StartIO … error 35"): the plain microphone is used
+    /// until the app restarts, rather than Alfred going deaf.
+    private static let failed = Mutex(false)
+    static func markFailed() {
+        failed.withLock { $0 = true }
+        Log.speech.error("voice processing: the microphone won't start with it; using the plain microphone")
+    }
 
     /// Call before reading the input format or installing a tap. Returns
     /// true when voice processing is on: the input then has several

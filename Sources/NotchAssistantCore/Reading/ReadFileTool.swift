@@ -125,6 +125,7 @@ struct ReadFileTool: AssistantTool {
         let text = AppNameMatcher.normalize(FileNameMatcher.separateExtension(spoken ?? ""))
         if refersToFront(text) {
             if let front = await frontDocument() { return .file(front) }
+            if let titled = await titledDocument() { return .file(titled) }
             if let last = ReadLog.last { return .file(last) }
             return .ask("Which file? Open it, or say its name")
         }
@@ -165,6 +166,46 @@ struct ReadFileTool: AssistantTool {
         guard AXUIElementCopyAttributeValue(window as! AXUIElement, "AXDocument" as CFString, &document) == .success,
               let value = document as? String, let url = URL(string: value), url.isFileURL else { return nil }
         return url
+    }
+
+    /// Viewers that don't report their file (some PDF readers) still show
+    /// its name in the window title: "2XQ40-assignment12.pdf – Page 3 of 9".
+    /// The title's pieces are compared with file names in the allowed
+    /// folders; only an exact name counts, newest first.
+    static func titledDocument() async -> URL? {
+        guard let title = await frontWindowTitle() else { return nil }
+        let pieces = titlePieces(title)
+        guard !pieces.isEmpty else { return nil }
+        let roots = Array(Set(ReadingAccess.folders + FileAccess.scopedRoots))
+        let matches = await FileNameMatcher.files(in: roots).filter { url in
+            pieces.contains { $0 == url.lastPathComponent.lowercased() || FileNameMatcher.fileKey($0) == FileNameMatcher.fileKey(url.lastPathComponent) }
+        }
+        return matches.max { modified($0) < modified($1) }
+    }
+
+    /// "Report.pdf – Page 3 of 9 — Edited" → ["report.pdf", "page 3 of 9", "edited"],
+    /// dropping pieces too short or generic to be a file name.
+    static func titlePieces(_ title: String) -> [String] {
+        title.components(separatedBy: CharacterSet(charactersIn: "—–|"))
+            .flatMap { $0.components(separatedBy: " - ") }
+            .map { $0.replacingOccurrences(of: #"\s*\((?:page )?\d+(?: of \d+)?\)$"#, with: "", options: [.regularExpression, .caseInsensitive]) }
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { FileNameMatcher.fileKey($0).count >= 4 && !$0.hasPrefix("page ") && !["edited", "locked", "untitled"].contains($0) }
+    }
+
+    private static func modified(_ url: URL) -> Date {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+    }
+
+    @MainActor
+    private static func frontWindowTitle() -> String? {
+        guard AXIsProcessTrusted(), let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let element = AXUIElementCreateApplication(app.processIdentifier)
+        var window: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &window) == .success, let window else { return nil }
+        var title: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window as! AXUIElement, kAXTitleAttribute as CFString, &title) == .success else { return nil }
+        return title as? String
     }
 
     // MARK: Content search

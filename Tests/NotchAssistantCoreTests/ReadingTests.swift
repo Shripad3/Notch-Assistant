@@ -318,3 +318,18 @@ struct FileNameMatcherTests {
         #expect(arguments?.action == "summarize")
     }
 }
+
+struct TitledDocumentTests {
+    @Test func windowTitlesSplitIntoNamePieces() {
+        #expect(ReadFileTool.titlePieces("2XQ40-assignment12.pdf – Page 3 of 9") == ["2xq40-assignment12.pdf"])
+        #expect(ReadFileTool.titlePieces("Lease Agreement — Edited") == ["lease agreement"])
+        #expect(ReadFileTool.titlePieces("notes.txt (2 of 4)") == ["notes.txt"])
+    }
+
+    @Test func summarisingTheOpenDocumentIsNotTheMeeting() {
+        let command = DirectCommand("Summarise the document that's open")!
+        #expect(TranscribeTool().directArguments(for: command) == nil)
+        #expect(ReadFileTool().directArguments(for: command)?.action == "summarize")
+        #expect(TranscribeTool().directArguments(for: DirectCommand("summarise that meeting")!)?.action == "summarize")
+    }
+}

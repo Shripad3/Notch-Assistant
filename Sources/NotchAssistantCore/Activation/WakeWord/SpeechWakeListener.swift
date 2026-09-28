@@ -106,6 +106,8 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
     private let queue = DispatchQueue(label: "dev.shripad.NotchAssistant.speechwake", qos: .userInitiated)
     private let onDetect: @Sendable (WakeContext) -> Void
     private let state = Mutex(State())
+    /// Counts stops from outside.
+    private let generation = Mutex(0)
 
     private struct State {
         var engine: AVAudioEngine?
@@ -118,6 +120,13 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
     private var history = AudioHistory(prerollSeconds: SpeechWakeListener.prerollSeconds)
     private var converter: AVAudioConverter?
     private var quietUntil = Date.distantPast
+    /// When the microphone last delivered audio. The engine can report a
+    /// successful start while Core Audio failed to start it ("StartIO …
+    /// error 35"), leaving the listener deaf; the watchdog notices.
+    private var lastAudio = Date.distantPast
+    static let silenceLimit: TimeInterval = 4
+    /// Restarts for silence in a row; reset once audio flows.
+    private var deafRestarts = 0
     /// Audio up to here has already produced a detection. The recognizer
     /// revises text it has already reported ("Alfred" as a draft, then
     /// "Alfred, pause." as the final result) and each revision can carry a
@@ -194,19 +203,60 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
         let renew = Task { [weak self] in
             try? await Task.sleep(for: Self.sessionLength)
             guard !Task.isCancelled, let self else { return }
-            await self.stop()
-            try? await self.start()
+            self.restart(after: .zero)
+        }
+        queue.sync { lastAudio = Date() }
+        // No audio for a few seconds means the microphone never started or
+        // was taken away: start again rather than sit deaf.
+        let watchdog = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled, let self else { return }
+                let (silent, restarts) = self.queue.sync { (Date().timeIntervalSince(self.lastAudio), self.deafRestarts) }
+                guard silent > Self.silenceLimit else { continue }
+                guard restarts < 5 else {
+                    Log.speech.error("wake word: the microphone isn't delivering audio; giving up")
+                    return
+                }
+                self.queue.sync { self.deafRestarts += 1 }
+                // Twice deaf with the noise filter: try without it.
+                if restarts == 1, VoiceProcessing.isEnabled { VoiceProcessing.markFailed() }
+                Log.speech.error("wake word: no audio for \(Int(silent), privacy: .public) s; restarting")
+                self.restart(after: .milliseconds(500 * (restarts + 1)))
+                return
+            }
         }
         state.withLock {
             $0.engine = engine
             $0.analyzer = analyzer
             $0.input = input
-            $0.tasks = [results, renew]
+            $0.tasks = [results, renew, watchdog]
         }
         Log.speech.notice("wake word: listening with speech recognition (\(locale.identifier, privacy: .public))")
     }
 
+    /// Stops and starts again, from a new task: `stop()` cancels the task
+    /// that asked for it, and starting inside a cancelled task fails.
+    /// A stop from outside (the toggle, a call) cancels a pending restart.
+    private func restart(after delay: Duration) {
+        let generation = generation.withLock { $0 }
+        Task.detached { [weak self] in
+            guard let self else { return }
+            await self.tearDown()
+            try? await Task.sleep(for: delay)
+            guard self.generation.withLock({ $0 }) == generation else { return }
+            do { try await self.start() } catch {
+                Log.speech.error("wake word: restart failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
     public func stop() async {
+        generation.withLock { $0 += 1 }
+        await tearDown()
+    }
+
+    private func tearDown() async {
         let current = state.withLock { state -> State in
             let current = state
             state = State()
@@ -226,6 +276,8 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
     }
 
     private func ingest(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat, input: AsyncStream<AnalyzerInput>.Continuation) {
+        lastAudio = Date()
+        deafRestarts = 0
         history.add(buffer)
         guard let converted = convert(buffer, to: format) else { return }
         input.yield(AnalyzerInput(buffer: converted))
