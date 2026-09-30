@@ -285,7 +285,7 @@ struct ScreenRecordTool: AssistantTool {
             let voice = arguments.voice == true && (said.isEmpty || !Set(said).isDisjoint(with: ["voice", "mic", "microphone", "narration", "audio", "me"]))
             let name = try await LiveCapture.shared.startScreenRecording(sound: sound, voice: voice)
             let extras = [sound ? "sound" : nil, voice ? "your voice" : nil].compactMap { $0 }
-            return ToolResult("Recording the screen\(extras.isEmpty ? "" : " with " + extras.joined(separator: " and ")). Click the notch or say “Alfred, stop recording” · \(name)")
+            return ToolResult("Recording the screen\(extras.isEmpty ? "" : " with " + extras.joined(separator: " and ")). Click the notch or say “\(WakePhrase.displayName), stop recording” · \(name)")
         }
     }
 

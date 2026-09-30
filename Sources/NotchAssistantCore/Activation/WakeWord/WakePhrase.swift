@@ -1,9 +1,54 @@
+import Foundation
+
 /// Second-stage check on a wake-word detection (spec §6: false positives
 /// are the main risk). The recognizer hears the audio from before the
 /// detection, so a real "Alfred" shows up in the transcript; a detection
 /// whose transcript has no such word is dropped silently.
 public enum WakePhrase {
-    public static let name = "alfred"
+    /// The wake word, chosen in Settings; "Alfred" by default.
+    public static let nameKey = "wake.name"
+    public static let defaultName = "Alfred"
+    /// Tests: a name within the current task only.
+    @TaskLocal static var override: String?
+
+    /// As written: "Alfred", "Jarvis".
+    public static var displayName: String {
+        if let override { return override }
+        let stored = UserDefaults.standard.string(forKey: nameKey)?.trimmingCharacters(in: .whitespaces) ?? ""
+        return stored.isEmpty || problem(with: stored) != nil ? defaultName : stored
+    }
+
+    /// Compared form: "alfred", "heyjarvis".
+    public static var name: String { AppNameMatcher.key(displayName) }
+
+    /// Why a name can't be the wake word, or nil when it can.
+    public static func problem(with candidate: String) -> String? {
+        let text = candidate.trimmingCharacters(in: .whitespaces)
+        let words = text.split(separator: " ")
+        guard !words.isEmpty, words.count <= 2 else { return "Use one or two words" }
+        guard text.allSatisfy({ $0.isLetter || $0 == " " || $0 == "-" }) else { return "Use letters only" }
+        let letters = text.filter(\.isLetter).count
+        guard letters >= 3, letters <= 20 else { return "Use 3 to 20 letters" }
+        if ["siri", "hey siri", "alexa", "okay google", "hey google"].contains(text.lowercased()) {
+            return "That wakes another assistant"
+        }
+        return nil
+    }
+
+    /// Short or everyday words wake the assistant by accident.
+    public static func warning(for candidate: String) -> String? {
+        let key = AppNameMatcher.key(candidate)
+        if key.count < 5 { return "Short names are often heard by accident; two or three syllables work best" }
+        if ["computer", "hello", "okay", "assistant", "friend", "buddy", "listen"].contains(key) {
+            return "An everyday word will wake it by accident"
+        }
+        return nil
+    }
+
+    /// For recognizers: "Alfred", "Hey Alfred", "Okay Alfred".
+    public static var contextualStrings: [String] {
+        [displayName, "Hey \(displayName)", "Okay \(displayName)"]
+    }
     /// How far into the transcript the wake word may appear: the recognizer
     /// gets ~1.5 s of audio from before the detection, so it comes early.
     static let searchWords = 10
@@ -61,8 +106,11 @@ public enum WakePhrase {
     }
 
     /// Exact, a known mis-hearing, or close in spelling.
-    static func isWakeWord(_ key: String) -> Bool {
-        key == name || ["alfreds", "alfredo", "alfie", "alford", "alfrid"].contains(key)
-            || (key.count >= 5 && AppNameMatcher.similarity(key, name) >= 0.7)
+    /// Close spelling counts only for names of five letters or more: for
+    /// short names it would match everyday words.
+    static func isWakeWord(_ key: String, name: String = name) -> Bool {
+        if key == name { return true }
+        if name == "alfred", ["alfreds", "alfredo", "alfie", "alford", "alfrid"].contains(key) { return true }
+        return name.count >= 5 && key.count >= 5 && AppNameMatcher.similarity(key, name) >= 0.7
     }
 }

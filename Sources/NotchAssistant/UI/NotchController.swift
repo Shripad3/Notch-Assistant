@@ -134,6 +134,8 @@ final class NotchController: NotchPresenter {
 
         if let screen = display.targetScreen {
             let mode: Mode = switch status.state {
+            // Conversation: just the speaking glyph beside the notch.
+            case .chat: status.showsChatText || notch.isHovering ? .expanded : .compact
             case .result, .reply, .list, .confirm, .alert, .question, .error: .expanded
             default: notch.isHovering ? .expanded : .compact
             }

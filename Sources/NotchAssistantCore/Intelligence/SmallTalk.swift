@@ -5,10 +5,12 @@
 enum SmallTalk {
     static func reply(to transcript: String) -> String? {
         var text = AppNameMatcher.normalize(transcript)
-        for name in ["alfred"] {
-            if text.hasPrefix(name + " ") { text.removeFirst(name.count + 1) }
-            if text.hasSuffix(" " + name) { text.removeLast(name.count + 1) }
-            if text == name { return "Yes? What can I do for you?" }
+        let name = AppNameMatcher.normalize(WakePhrase.displayName)
+        if text.hasPrefix(name + " ") { text.removeFirst(name.count + 1) }
+        if text.hasSuffix(" " + name) { text.removeLast(name.count + 1) }
+        if text == name { return "Yeah? What's up?" }
+        if ["who are you", "what s your name", "what is your name"].contains(text) {
+            return "I'm \(WakePhrase.displayName). I live in your notch."
         }
         for prefix in ["hey ", "hi ", "hello ", "okay ", "ok "] where text.hasPrefix(prefix) && text.count > prefix.count {
             let rest = String(text.dropFirst(prefix.count))
@@ -20,12 +22,12 @@ enum SmallTalk {
     private static let replies: [String: String] = {
         var table: [String: String] = [:]
         for greeting in ["hi", "hello", "hey", "hey there", "hello there", "yo"] {
-            table[greeting] = "Hello. What can I do for you?"
+            table[greeting] = "Hey! What's up?"
         }
-        table["good morning"] = "Good morning. What can I do for you?"
-        table["good afternoon"] = "Good afternoon. What can I do for you?"
-        table["good evening"] = "Good evening. What can I do for you?"
-        table["good night"] = "Good night."
+        table["good morning"] = "Morning! What's up?"
+        table["good afternoon"] = "Hey, good afternoon! What's up?"
+        table["good evening"] = "Evening! What's up?"
+        table["good night"] = "Night! Sleep well."
         for sendIt in ["send it", "send", "send it now", "send that", "send the message", "send the email"] {
             table[sendIt] = "There's nothing waiting to be sent."
         }
@@ -34,13 +36,10 @@ enum SmallTalk {
             table[answer] = "There's nothing waiting for an answer."
         }
         for thanks in ["thanks", "thank you", "thanks a lot", "thank you so much", "cheers", "much appreciated"] {
-            table[thanks] = "You're welcome."
-        }
-        for identity in ["who are you", "what s your name", "what is your name"] {
-            table[identity] = "I'm Alfred, the assistant in your notch."
+            table[thanks] = "Anytime!"
         }
         for help in ["what can you do", "help", "what can i ask you", "what do you do"] {
-            table[help] = "Quite a lot: apps, websites and files; music; timers, alarms and reminders; your calendar; calls, texts and email; notes, dictation and meeting transcripts; the weather; or just a chat."
+            table[help] = "Loads: apps, websites and files; music; timers, alarms and reminders; your calendar; calls, texts and email; notes, dictation and meeting transcripts; the weather; or just a chat."
         }
         return table
     }()

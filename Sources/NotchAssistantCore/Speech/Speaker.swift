@@ -112,7 +112,7 @@ public final class Speaker {
             text = outcome
         case .error(let failure) where mode != .never:
             text = failure.message
-        case .reply(let answer) where mode != .never:
+        case .reply(let answer) where mode != .never, .chat(let answer) where mode != .never:
             text = answer
         case .question(let question) where mode != .never:
             text = question

@@ -53,7 +53,7 @@ final class LiveTranscriber: @unchecked Sendable {
             throw AssistantFailure("Speech recognition isn't available for this language")
         }
         let context = AnalysisContext()
-        context.contextualStrings[.general] = ["Alfred"] + ContactBook.shared.namesForRecognition(limit: 100)
+        context.contextualStrings[.general] = [WakePhrase.displayName] + ContactBook.shared.namesForRecognition(limit: 100)
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         try await analyzer.setContext(context)
         let (stream, input) = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(256))

@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var wakeWanted = false
     private var wakeEngine: WakeEngine?
     private var wakeAccent: String?
+    private var wakeName: String?
     private var wakeEvents: AsyncStream<ActivationEvent>.Continuation?
     private var wakeTask: Task<Void, Never>?
     private let clockNotifier = SystemClockNotifier()
@@ -46,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        Self.quitOtherCopies()
         Speaker.neural = KokoroVoice.shared
         #if DEBUG
         watchdog.start()
@@ -282,6 +284,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateWakeWord()
     }
 
+    /// Two copies (say one in /Applications and one in ~/Applications)
+    /// would both hear the wake word and both answer. The newest wins: the
+    /// one launched last asks the others to quit.
+    private static func quitOtherCopies() {
+        let me = ProcessInfo.processInfo.processIdentifier
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+            .filter { $0.processIdentifier != me }
+        for other in others {
+            Log.app.notice("quitting another copy at \(other.bundleURL?.path(percentEncoded: false) ?? "?", privacy: .private)")
+            if !other.terminate() { other.forceTerminate() }
+        }
+    }
+
     private func updateWakeWord() {
         guard let power else { return }
         let enabled = UserDefaults.standard.bool(forKey: "wake.enabled")
@@ -301,20 +316,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             nil
         }
-        let engine = WakeEngine.current
+        let name = WakePhrase.name
+        // The bundled models only know "Alfred"; another name uses speech.
+        let engine = name == "alfred" ? WakeEngine.current : .speech
         let accent = UserDefaults.standard.string(forKey: SpeechWakeListener.localeKey) ?? ""
         let wanted = enabled && reason == nil
 
         // Settings writes land here too; only act on a real change.
-        guard wanted != wakeWanted || engine != wakeEngine || accent != wakeAccent else {
+        guard wanted != wakeWanted || engine != wakeEngine || accent != wakeAccent || name != wakeName else {
             if !wanted { status.wakeStatus = enabled ? .paused(reason ?? "") : .off }
             return
         }
         wakeWanted = wanted
         let previous = wakeListener
-        if engine != wakeEngine || accent != wakeAccent { wakeListener = nil }
+        // A new name needs the recognizer primed with it: start afresh.
+        if engine != wakeEngine || accent != wakeAccent || name != wakeName { wakeListener = nil }
         wakeEngine = engine
         wakeAccent = accent
+        wakeName = name
 
         guard wanted else {
             status.wakeStatus = enabled ? .paused(reason ?? "") : .off

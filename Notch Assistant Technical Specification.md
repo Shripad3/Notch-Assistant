@@ -43,7 +43,7 @@ The requirement is **no cloud AI**, not *no network*. Inference is local: no API
 | Intent parsing | Model for every command | Routines, then small talk, then `DirectMatcher` (fixed phrasings), then the model | The 3B model was not deterministic enough for simple commands (§8) |
 | Model context | Every enabled tool shown | `ToolRouter` shows at most 4 tools, picked by keyword | All tools overflowed the 4,096-token context |
 | Argument trust | Executor validation for files | Also *grounding*: a tool refuses an argument the user never said | The model invented URLs, apps, browsers and songs |
-| UI states | Six | Ten: adds Reply (spoken answer), List (pick one), Confirm (yes/no) and Alert (a timer or alarm ringing) | Weather answers, same-named files, batch changes, timers |
+| UI states | Six | Eleven: adds Reply (spoken answer), Chat (conversation, spoken with only a speaking glyph), List (pick one), Confirm (yes/no) and Alert (a timer or alarm ringing) | Weather answers, conversation that isn't read, same-named files, batch changes, timers |
 | Spotify | AppleScript; Web API optional | Both: AppleScript for playback, Web API (user's own client ID, loopback OAuth) to resolve songs and playlists | Spoken names rarely match exactly |
 | systemControl | Native APIs only | Volume and mute through CoreAudio; brightness and lock by simulated keys (Accessibility); Do Not Disturb through the user's shortcut | macOS has no public API for brightness or Focus. Still no shell. |
 | File search | `NSMetadataQuery` | `MDQuery` on a background thread | `NSMetadataQuery` spun a nested run loop and stalled the main thread |
@@ -210,6 +210,10 @@ A user-facing setting with three options:
 
 Clamshell is the common trigger for this, but display sleep and Sidecar can produce it too. Treat "no notched screen" as one condition with one handler rather than special-casing the lid.
 
+**The microphone with the lid closed.** A MacBook's built-in microphone is off while the lid is closed, so hands-free use in clamshell mode needs another input: AirPods or a headset, a USB or webcam microphone, or an iPhone as a Continuity microphone. When the input device changes, the audio engine stops; the wake listener observes `AVAudioEngineConfigurationChange` and restarts on the new default input within about 0.3 s (the no-audio watchdog is the backstop). A virtual input (e.g. a conferencing app's driver) delivers silence, and nothing can fix that in software.
+
+**One copy at a time.** Two copies of the app (one in /Applications, one in ~/Applications) both heard the wake word and both answered. At launch, the app asks any other running copy with its bundle identifier to quit, so the one launched last wins.
+
 ## Activation layer
 
 Three sources, each independently toggleable, all conforming to `ActivationSource` and feeding one arbitrated stream.
@@ -236,6 +240,7 @@ Run detection on a dedicated low-priority queue at 16 kHz mono. On detection, em
 - Detections are de-duplicated by audio time, because the volatile and final results both report the same word.
 - A detection from this engine is already confirmed, so the second-stage check is skipped; common mishearings of the wake word are stripped from the command.
 - The openWakeWord path (`WakeWordDetector`, ONNX Runtime) remains selectable in Settings.
+- **The name is a setting** (Settings › Activation, "Wake word"; Alfred by default). One or two words of 3–20 letters, not another assistant's ("Siri", "Alexa"). Names under five letters or everyday words get a warning, because they wake it by accident; close-spelling matches apply only to names of five letters or more, and the list of known mishearings exists only for "Alfred". The name primes all three recognizers, answers "what's your name", and appears in the notch's hints. A name other than Alfred always uses speech recognition, since the bundled wake-word models only know "Alfred". Changing it restarts the listener.
 - **Watchdog:** the audio engine can report a successful start while Core Audio failed to start the microphone ("StartIO … error 35"), leaving the listener deaf with the toggle on. If no audio arrives for 4 s, the listener restarts, from a fresh task and only if nothing stopped it in the meantime. After two deaf starts with the noise filter on, voice processing is switched off until the app restarts, and the plain microphone is used. After five, it gives up and logs it.
 
 ### Gestures
@@ -658,7 +663,8 @@ The microphone goes through Apple's voice processing (`setVoiceProcessingEnabled
 - **Canned replies:** greetings, thanks, identity and help keep their fixed lines; "how are you" became conversation.
 
 **`Conversation`.**
-- **Session:** one `LanguageModelSession` per conversation, so it keeps context, with a persona: Alfred as a calm, warm, dryly witty butler.
+- **Session:** one `LanguageModelSession` per conversation, so it keeps context, with a persona: a cool, easygoing friend (casual, relaxed, a bit playful, never formal), chosen by the user in place of the original butler. The canned small-talk lines match ("Hey! What's up?", "Anytime!").
+- **Not shown as text:** conversation and small talk use the Chat state. The reply is spoken, and the notch shows only an animated waveform beside the notch ("Talking" if hovered or on the floating panel). With speech set to Never, the text is shown instead. Answers from tools (weather, summaries) stay in the Reply state and are shown.
 - **Replies:** spoken, one to three sentences, empathy before advice.
 - **Honesty and limits:** it's honest that it has no internet; it doesn't claim to act; it points to professionals and emergency services where needed.
 - **Speed:** about 1.5–2 s per reply on the M4 Air.
@@ -885,7 +891,7 @@ The tool registry therefore reads settings at session construction, every time.
 
 | Pane | Contents (as built) |
 | --- | --- |
-| Activation | Open at login (on by default, so alarms ring); hand gestures on/off with status; hotkey (⌥Space, hold to talk); wake word on/off, engine (speech / model), accent, sensitivity; auto-switch power profiles |
+| Activation | Open at login (on by default, so alarms ring); hand gestures on/off with status; hotkey (⌥Space, hold to talk); wake word on/off and its name, engine (speech / model), accent, sensitivity; auto-switch power profiles |
 | Conversation | Talk with Alfred on/off; memory on/off; every remembered item with delete; forget everything |
 | Messages & Email | Contacts access; texts via Messages or WhatsApp; emails open in Gmail or Outlook |
 | Recording | Keep audio; include the other side of calls; transcripts folder; stop listening during calls |

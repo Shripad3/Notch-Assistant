@@ -19,8 +19,11 @@ public struct FoundationModelsEngine: AssistantEngine {
             Log.intelligence.notice("routine \"\(routine.name, privacy: .public)\" for \"\(transcript, privacy: .public)\"")
             return Routines.plan(for: routine, tools: tools)
         }
-        if let reply = SmallTalk.reply(to: transcript) ?? ContentRequests.refusal(for: transcript) {
-            return Plan(steps: [], isDirect: true, reply: reply)
+        if let reply = SmallTalk.reply(to: transcript) {
+            return Plan(steps: [], isDirect: true, reply: reply, isSmallTalk: true)
+        }
+        if let refusal = ContentRequests.refusal(for: transcript) {
+            return Plan(steps: [], isDirect: true, reply: refusal)
         }
         guard !tools.isEmpty else { return Plan(steps: []) }
         if let plan = DirectMatcher.plan(for: transcript, tools: tools) {

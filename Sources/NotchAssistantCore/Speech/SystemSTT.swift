@@ -37,7 +37,7 @@ public actor SystemSTT: TranscriptionService {
         request.addsPunctuation = false
         // Contact names help with names the recogniser doesn't know,
         // including Indian names ("Shripad", "Aditya").
-        request.contextualStrings = ["Alfred", "Hey Alfred"] + ContactBook.shared.namesForRecognition()
+        request.contextualStrings = WakePhrase.contextualStrings + ContactBook.shared.namesForRecognition()
         self.request = request
         latest = ""
         finalText = nil

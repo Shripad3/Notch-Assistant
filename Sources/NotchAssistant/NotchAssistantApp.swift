@@ -41,7 +41,7 @@ private struct StatusMenu: View {
             Button("Dictate into Notes") { Task { try? await LiveCapture.shared.startDictation(toNotes: true) } }
         }
         if let call = status.callApp {
-            Text("\(call) is using the microphone: not listening for “Alfred”")
+            Text("\(call) is using the microphone: not listening for “\(WakePhrase.displayName)”")
         }
         Divider()
         Text("Hold ⌥Space and speak")

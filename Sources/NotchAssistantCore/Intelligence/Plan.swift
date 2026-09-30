@@ -31,6 +31,8 @@ public struct Plan: Sendable {
     public var isDirect = false
     /// A text-only answer, with no steps (`SmallTalk`).
     public var reply: String?
+    /// The reply is small talk ("how are you"), shown like conversation.
+    public var isSmallTalk = false
     /// The user is talking, not commanding: answer conversationally.
     public var chat: String?
     /// A routine: every step runs even if one fails, and the routine's

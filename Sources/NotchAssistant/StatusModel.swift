@@ -14,7 +14,7 @@ enum WakeStatus: Equatable {
     var description: String {
         switch self {
         case .off: "Off"
-        case .listening: "Listening for “Alfred”"
+        case .listening: "Listening for “\(WakePhrase.displayName)”"
         case .paused(let reason): "Paused: \(reason)"
         case .unavailable(let reason): "Unavailable: \(reason)"
         }
@@ -120,6 +120,9 @@ final class StatusModel {
         level = max(newLevel, level * 0.8)
     }
 
+    /// Conversation is heard, not read, unless speech is off.
+    var showsChatText: Bool { SpokenResponses.current == .never }
+
     func resetLevel() {
         level = 0
     }
@@ -133,6 +136,7 @@ final class StatusModel {
         case .acting: "bolt.fill"
         case .result: "checkmark.circle.fill"
         case .reply: "text.bubble.fill"
+        case .chat: "waveform"
         case .list: "list.bullet"
         case .confirm: "questionmark.circle.fill"
         case .alert: "alarm.fill"
@@ -145,11 +149,12 @@ final class StatusModel {
         if isPaused { return "Paused" }
         if isSuspendedByDisplay { return "Suspended until the built-in display is back" }
         return switch state {
-        case .idle: wakeStatus == .listening ? "Listening for “Alfred”" : "Idle"
+        case .idle: wakeStatus == .listening ? "Listening for “\(WakePhrase.displayName)”" : "Idle"
         case .listening(let partial): partial.isEmpty ? "Listening…" : "“\(partial)”"
         case .thinking(let transcript): "Thinking: “\(transcript)”"
         case .acting(let tool, let target): "\(tool.title): \(target)"
         case .result(let outcome), .reply(let outcome), .list(let outcome, _), .confirm(let outcome, _): outcome
+        case .chat(let text): showsChatText ? text : "Talking"
         case .alert(let alert): alert.title
         case .question(let question): question
         case .error(let failure): failure.message

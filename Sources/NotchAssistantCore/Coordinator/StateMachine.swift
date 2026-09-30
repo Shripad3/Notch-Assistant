@@ -9,6 +9,9 @@ public enum AssistantState: Sendable, Equatable {
     /// A Result that answers in words rather than reporting an action
     /// ("Hello"). Shown like a result; spoken unless speech is off.
     case reply(String)
+    /// Conversation and small talk: spoken, with only a speaking indicator
+    /// in the notch, not the words (unless speech is off).
+    case chat(String)
     /// A Result with items to choose from (found files). Selecting one goes
     /// back through the coordinator.
     case list(String, [ResultItem])
@@ -31,6 +34,8 @@ public enum AssistantEvent: Sendable, Equatable {
     case cancel
     case toolCall(ToolLabel, target: String)
     case textOnly(String)
+    /// A conversational reply (see `AssistantState.chat`).
+    case chat(String)
     case done(String, items: [ResultItem] = [])
     case needsConfirmation(String, [ResultItem])
     /// A tool answered a question: shown and spoken like a reply.
@@ -60,7 +65,7 @@ public enum StateMachine {
             .alert(alert)
         case (.acting, .ask(let question)):
             .question(question)
-        case (.question, .activation), (.reply, .activation), (.result, .activation), (.list, .activation), (.error, .activation):
+        case (.question, .activation), (.reply, .activation), (.chat, .activation), (.result, .activation), (.list, .activation), (.error, .activation):
             // Answering, or saying something new while (or just after)
             // Alfred speaks: it stops and listens.
             .listening(partial: "")
@@ -78,6 +83,8 @@ public enum StateMachine {
             .acting(tool: tool, target: target)
         case (.thinking, .textOnly(let text)):
             .reply(text)
+        case (.thinking, .chat(let text)):
+            .chat(text)
         case (.acting, .done(let text, let items)):
             items.isEmpty ? .result(text) : .list(text, items)
         case (.acting, .answer(let text)):
@@ -98,7 +105,7 @@ public enum StateMachine {
              (.list, .failure(let failure)),
              (.confirm, .failure(let failure)):
             .error(failure)
-        case (.result, .dismiss), (.reply, .dismiss), (.list, .dismiss), (.confirm, .dismiss), (.error, .dismiss), (.alert, .dismiss), (.question, .dismiss):
+        case (.result, .dismiss), (.reply, .dismiss), (.chat, .dismiss), (.list, .dismiss), (.confirm, .dismiss), (.error, .dismiss), (.alert, .dismiss), (.question, .dismiss):
             .idle
         case (.idle, .cancel):
             nil

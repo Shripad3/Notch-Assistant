@@ -78,7 +78,7 @@ struct NotchExpandedView: View {
             }
             if case .alert(let alert) = status.state {
                 HStack {
-                    Text("Or say “Alfred, stop”\(alert.canSnooze ? " / “snooze”" : "")")
+                    Text("Or say “\(WakePhrase.displayName), stop”\(alert.canSnooze ? " / “snooze”" : "")")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -93,7 +93,7 @@ struct NotchExpandedView: View {
             if case .confirm(_, let items) = status.state {
                 ResultList(items: items, select: nil)
                 HStack {
-                    Text("Or say “Alfred, yes” / “no”")
+                    Text("Or say “yes” / “no”")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -150,7 +150,10 @@ struct NotchExpandedView: View {
     }
 
     private var isAnswer: Bool {
-        if case .reply = status.state { true } else { false }
+        switch status.state {
+        case .reply, .chat: true
+        default: false
+        }
     }
 
     private var heading: String {
@@ -160,6 +163,7 @@ struct NotchExpandedView: View {
         case .thinking: "Thinking"
         case .acting(let tool, _): tool.title
         case .result(let outcome), .reply(let outcome), .list(let outcome, _), .confirm(let outcome, _): outcome
+        case .chat(let text): status.showsChatText ? text : "Talking"
         case .alert(let alert): alert.title
         case .question(let question): question
         case .error(let failure): failure.message
@@ -194,6 +198,9 @@ struct StateGlyph: View {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
         case .reply:
             Image(systemName: "text.bubble.fill").foregroundStyle(.white)
+        case .chat:
+            Image(systemName: "waveform").foregroundStyle(.white)
+                .symbolEffect(.variableColor.iterative, options: .repeating)
         case .list:
             Image(systemName: "list.bullet").foregroundStyle(.white)
         case .confirm:

@@ -114,6 +114,7 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
         var analyzer: SpeechAnalyzer?
         var input: AsyncStream<AnalyzerInput>.Continuation?
         var tasks: [Task<Void, Never>] = []
+        var deviceObserver: NSObjectProtocol?
     }
 
     // Touched only on `queue`.
@@ -165,7 +166,7 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
         }
 
         let context = AnalysisContext()
-        context.contextualStrings[.general] = ["Alfred", "Hey Alfred", "Okay Alfred"]
+        context.contextualStrings[.general] = WakePhrase.contextualStrings
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         try await analyzer.setContext(context)
         let (stream, input) = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(64))
@@ -226,11 +227,21 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
                 return
             }
         }
+        // Closing the lid (the built-in microphone switches off), plugging
+        // in a headset or connecting AirPods stops the engine: start again
+        // on whatever the input is now.
+        let deviceObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { [weak self] _ in
+            Log.speech.notice("wake word: audio device changed; restarting")
+            self?.restart(after: .milliseconds(300))
+        }
         state.withLock {
             $0.engine = engine
             $0.analyzer = analyzer
             $0.input = input
             $0.tasks = [results, renew, watchdog]
+            $0.deviceObserver = deviceObserver
         }
         Log.speech.notice("wake word: listening with speech recognition (\(locale.identifier, privacy: .public))")
     }
@@ -263,6 +274,7 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
             return current
         }
         guard let engine = current.engine else { return }
+        if let observer = current.deviceObserver { NotificationCenter.default.removeObserver(observer) }
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
         current.input?.finish()

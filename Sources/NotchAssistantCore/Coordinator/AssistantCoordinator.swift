@@ -85,8 +85,8 @@ public actor AssistantCoordinator {
         interruptedAlert = nil
         switch state {
         case .confirm, .question: answering = true
-        case .reply where conversing: answering = true
-        case .result, .reply, .list, .error: interrupting = true
+        case .reply where conversing, .chat where conversing: answering = true
+        case .result, .reply, .chat, .list, .error: interrupting = true
         case .alert(let alert):
             answering = true
             interruptedAlert = alert
@@ -287,7 +287,7 @@ public actor AssistantCoordinator {
         }
 
         if conversing, Conversation.isGoodbye(transcript) {
-            await apply(.textOnly("Anytime."), session: id)
+            await apply(.chat("Anytime."), session: id)
             return
         }
 
@@ -296,14 +296,14 @@ public actor AssistantCoordinator {
             if let chat = plan.chat {
                 let reply = try await conversation.reply(to: chat)
                 conversing = true
-                await apply(.textOnly(reply), session: id)
+                await apply(.chat(reply), session: id)
                 await presenter.finishedSpeaking()
-                guard id == session, case .reply = state else { return }
+                guard id == session, case .chat = state else { return }
                 await activationBegan(wake: .followUp())
                 return
             }
             if plan.steps.isEmpty, let reply = plan.reply {
-                await apply(.textOnly(reply), session: id)
+                await apply(plan.isSmallTalk ? .chat(reply) : .textOnly(reply), session: id)
                 return
             }
             if let routine = plan.routine {
@@ -435,7 +435,7 @@ public actor AssistantCoordinator {
         guard ListenAfterReply.seconds > 0 else { return false }
         switch (previous, state) {
         case (.listening, _), (.idle, _): return false
-        case (_, .result), (_, .reply), (_, .list), (_, .error): return true
+        case (_, .result), (_, .reply), (_, .chat), (_, .list), (_, .error): return true
         default: return false
         }
     }
@@ -469,7 +469,7 @@ public actor AssistantCoordinator {
         case .confirm: delay = .seconds(20)
         // Mid-conversation the reply stays until Alfred has finished saying it
         // and starts listening; the long delay is only a fallback.
-        case .reply: delay = conversing ? .seconds(40) : .seconds(4)
+        case .reply, .chat: delay = conversing ? .seconds(40) : .seconds(4)
         case .list: delay = .seconds(10)
         case .error: delay = .seconds(5)
         case .alert: delay = Self.ringFor
@@ -478,7 +478,7 @@ public actor AssistantCoordinator {
         default: return
         }
         let spoken: Bool = switch state {
-        case .result, .reply, .error: true
+        case .result, .reply, .chat, .error: true
         default: false
         }
         let presenter = presenter

@@ -92,6 +92,8 @@ struct SettingsView: View {
 private struct ActivationPane: View {
     let status: StatusModel
     @AppStorage("wake.enabled") private var wakeEnabled = false
+    @AppStorage(WakePhrase.nameKey) private var wakeName = WakePhrase.defaultName
+    @State private var nameDraft = WakePhrase.displayName
     @AppStorage(WakeWordListener.thresholdKey) private var threshold = Double(WakeWordListener.defaultThreshold)
     @AppStorage(PowerProfileMonitor.autoSwitchKey) private var autoSwitch = true
     @AppStorage(WakeEngine.defaultsKey) private var engine = WakeEngine.speech.rawValue
@@ -102,6 +104,12 @@ private struct ActivationPane: View {
     @AppStorage("gesture.hold") private var gestureHold = 5
     @State private var openAtLogin = LoginItem.isEnabled || LoginItem.needsApproval
     @State private var loginNeedsApproval = LoginItem.needsApproval
+
+    private func saveName() {
+        let name = nameDraft.trimmingCharacters(in: .whitespaces)
+        guard WakePhrase.problem(with: name) == nil else { return }
+        wakeName = name
+    }
 
     var body: some View {
         Form {
@@ -143,7 +151,24 @@ private struct ActivationPane: View {
                 Text("Always available, including on battery. Escape cancels.")
             }
             Section {
-                Toggle("Listen for “Alfred”", isOn: $wakeEnabled)
+                Toggle("Listen for “\(WakePhrase.displayName)”", isOn: $wakeEnabled)
+                HStack {
+                    TextField("Wake word", text: $nameDraft)
+                        .onSubmit(saveName)
+                    Button("Use") { saveName() }
+                        .disabled(WakePhrase.problem(with: nameDraft) != nil || nameDraft.trimmingCharacters(in: .whitespaces) == WakePhrase.displayName)
+                    if WakePhrase.displayName != WakePhrase.defaultName {
+                        Button("Reset") {
+                            nameDraft = WakePhrase.defaultName
+                            wakeName = WakePhrase.defaultName
+                        }
+                    }
+                }
+                if let problem = WakePhrase.problem(with: nameDraft) {
+                    Text(problem).font(.caption).foregroundStyle(.red)
+                } else if let warning = WakePhrase.warning(for: nameDraft) {
+                    Text(warning).font(.caption).foregroundStyle(.secondary)
+                }
                 LabeledContent("Status", value: status.wakeStatus.description)
                 Picker("Detect with", selection: $engine) {
                     ForEach(WakeEngine.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
@@ -173,7 +198,7 @@ private struct ActivationPane: View {
             } header: {
                 Text("Hands-free")
             } footer: {
-                Text("While listening for “Alfred”, macOS shows the orange microphone dot. Nothing leaves this Mac.")
+                Text("While listening for “\(wakeName)”, macOS shows the orange microphone dot. Nothing leaves this Mac. A name other than Alfred always uses speech recognition, since the wake-word models only know “Alfred”.")
             }
             if engine == WakeEngine.model.rawValue {
             Section {

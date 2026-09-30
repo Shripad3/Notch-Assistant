@@ -76,7 +76,7 @@ struct TranscribeTool: AssistantTool {
         case "start":
             let name = try await LiveCapture.shared.startTranscript()
             let others = CaptureSettings.includeOthers ? ", including the other side of calls" : ""
-            return ToolResult("Recording\(others). Click the notch or say “Alfred, stop” to finish · \(name)")
+            return ToolResult("Recording\(others). Click the notch or say “\(WakePhrase.displayName), stop” to finish · \(name)")
         case "stop":
             return ToolResult(await LiveCapture.shared.stop())
         default:
