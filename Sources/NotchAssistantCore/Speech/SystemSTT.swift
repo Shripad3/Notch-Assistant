@@ -15,6 +15,7 @@ public actor SystemSTT: TranscriptionService {
     private var finalText: String?
     private var finalWaiter: CheckedContinuation<String, Never>?
     private var capturing = false
+    private var reconfigured: NSObjectProtocol?
 
     public init() {}
 
@@ -77,6 +78,7 @@ public actor SystemSTT: TranscriptionService {
             throw AssistantFailure("Couldn't start the microphone: \(error.localizedDescription)")
         }
         capturing = true
+        reconfigured = VoiceProcessing.keepRunning(engine, label: "command")
 
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
             let text = result?.bestTranscription.formattedString
@@ -137,6 +139,8 @@ public actor SystemSTT: TranscriptionService {
     private func stopAudio() {
         guard capturing else { return }
         capturing = false
+        if let reconfigured { NotificationCenter.default.removeObserver(reconfigured) }
+        reconfigured = nil
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
         AudioDucker.restore()

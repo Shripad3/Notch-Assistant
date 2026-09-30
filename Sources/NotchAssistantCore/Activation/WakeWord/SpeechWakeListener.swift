@@ -227,13 +227,9 @@ public final class SpeechWakeListener: WakeListening, @unchecked Sendable {
                 return
             }
         }
-        // Closing the lid (the built-in microphone switches off), plugging
-        // in a headset or connecting AirPods stops the engine: start again
-        // on whatever the input is now.
-        let deviceObserver = NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
-        ) { [weak self] _ in
-            Log.speech.notice("wake word: audio device changed; restarting")
+        // Closing the lid (the built-in microphone switches off), a headset
+        // or AirPods: start over on the new input.
+        let deviceObserver = VoiceProcessing.keepRunning(engine, label: "wake word") { [weak self] in
             self?.restart(after: .milliseconds(300))
         }
         state.withLock {

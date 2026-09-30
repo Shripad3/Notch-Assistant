@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import CoreAudio
 import Synchronization
 
 /// Apple's voice processing on the microphone: echo cancellation (music or
@@ -18,6 +19,46 @@ public enum VoiceProcessing {
     static func markFailed() {
         failed.withLock { $0 = true }
         Log.speech.error("voice processing: the microphone won't start with it; using the plain microphone")
+    }
+
+    /// Keeps `engine` running through reconfigurations. Turning voice
+    /// processing on reconfigures the device just after the engine starts,
+    /// which stops it: without this, the microphone went silent while the
+    /// app believed it was listening. The same device: start the same
+    /// engine again. A different device (lid closed, headset): call
+    /// `onDeviceChange`, if given. Remove the observer before stopping the
+    /// engine on purpose.
+    static func keepRunning(_ engine: AVAudioEngine, label: String, onDeviceChange: (@Sendable () -> Void)? = nil) -> NSObjectProtocol {
+        let device = defaultInputDevice()
+        nonisolated(unsafe) weak let engine = engine
+        return NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { _ in
+            let now = defaultInputDevice()
+            if now != device, let onDeviceChange {
+                Log.speech.notice("\(label, privacy: .public): audio input changed; restarting")
+                onDeviceChange()
+                return
+            }
+            guard let engine, !engine.isRunning else { return }
+            do {
+                try engine.start()
+                Log.speech.notice("\(label, privacy: .public): audio reconfigured; engine started again")
+            } catch {
+                Log.speech.error("\(label, privacy: .public): engine didn't start again: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// The system's default input device.
+    static func defaultInputDevice() -> AudioDeviceID {
+        var device = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device)
+        return device
     }
 
     /// Call before reading the input format or installing a tap. Returns

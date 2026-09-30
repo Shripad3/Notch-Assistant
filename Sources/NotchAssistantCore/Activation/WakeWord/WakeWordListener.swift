@@ -94,6 +94,7 @@ public final class WakeWordListener: WakeListening, @unchecked Sendable {
     static let refractory = 2.0
 
     private let queue = DispatchQueue(label: "dev.shripad.NotchAssistant.wakeword", qos: .userInitiated)
+    private let reconfigured = Mutex<NSObjectProtocol?>(nil)
     private let engine = AVAudioEngine()
     private let detector: WakeWordDetector
     private let onDetect: @Sendable (WakeContext) -> Void
@@ -141,6 +142,7 @@ public final class WakeWordListener: WakeListening, @unchecked Sendable {
             running.withLock { $0 = false }
             throw AssistantFailure("Couldn't start listening for the wake word: \(error.localizedDescription)")
         }
+        reconfigured.withLock { $0 = VoiceProcessing.keepRunning(engine, label: "wake word") }
         Log.speech.notice("wake word: listening")
     }
 
@@ -150,6 +152,9 @@ public final class WakeWordListener: WakeListening, @unchecked Sendable {
 
     public func stopListening() {
         guard running.withLock({ let was = $0; $0 = false; return was }) else { return }
+        if let observer = reconfigured.withLock({ let observer = $0; $0 = nil; return observer }) {
+            NotificationCenter.default.removeObserver(observer)
+        }
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
         queue.async { [self] in

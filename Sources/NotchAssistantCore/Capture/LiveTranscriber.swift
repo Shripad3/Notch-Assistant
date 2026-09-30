@@ -25,6 +25,7 @@ final class LiveTranscriber: @unchecked Sendable {
         var input: AsyncStream<AnalyzerInput>.Continuation
         var results: Task<Void, Never>
         var engine: AVAudioEngine?
+        var reconfigured: NSObjectProtocol?
         var system: SystemAudioCapture?
     }
 
@@ -102,6 +103,7 @@ final class LiveTranscriber: @unchecked Sendable {
             engine.prepare()
             try engine.start()
             running.engine = engine
+            running.reconfigured = VoiceProcessing.keepRunning(engine, label: "dictation")
         case .systemAudio:
             let system = SystemAudioCapture { [weak self] buffer in
                 guard let self else { return }
@@ -119,6 +121,7 @@ final class LiveTranscriber: @unchecked Sendable {
             defer { current = nil }
             return current
         }) else { return }
+        if let reconfigured = running.reconfigured { NotificationCenter.default.removeObserver(reconfigured) }
         running.engine?.stop()
         running.engine?.inputNode.removeTap(onBus: 0)
         await running.system?.stop()
