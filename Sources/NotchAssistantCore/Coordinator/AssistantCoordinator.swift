@@ -39,6 +39,8 @@ public actor AssistantCoordinator {
     /// How long an alert rings before it counts as missed.
     static let ringFor: Duration = .seconds(60)
     private static let undoLabel = ToolLabel(name: "organiseFiles", title: "Files", symbol: "folder")
+    /// The tool whose action waits for "yes" (a call shows a phone, not a folder).
+    private var pendingLabel = AssistantCoordinator.undoLabel
     private var work: Task<Void, Never>?
     private var dismissal: Task<Void, Never>?
 
@@ -269,7 +271,7 @@ public actor AssistantCoordinator {
             pendingConfirmation = nil
             switch Confirmations.answer(in: transcript) {
             case true?:
-                await apply(.toolCall(Self.undoLabel, target: "Confirmed"), session: id)
+                await apply(.toolCall(pendingLabel, target: "On it"), session: id)
                 do {
                     resultDelay = .seconds(5)
                     await apply(.done(try await Confirmations.confirm(token)), session: id)
@@ -335,6 +337,7 @@ public actor AssistantCoordinator {
             }
             if let token = outcomes.last?.confirmation {
                 pendingConfirmation = token
+                pendingLabel = plan.steps.last?.tool.label ?? Self.undoLabel
                 shownConfirmation = (text, items)
                 await apply(.needsConfirmation(text, items), session: id)
                 // Listen for "yes" or "no" straight away: no wake word needed.

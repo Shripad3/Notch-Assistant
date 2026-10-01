@@ -124,10 +124,11 @@ struct CallTool: AssistantTool {
         }
         let how = arguments.via == "facetime" ? "FaceTime" : arguments.via == "facetimeAudio" ? "FaceTime audio" : "Call"
         let token = PendingActions.park {
+            let before = CallPrompt.windowNumbers()
             _ = await MainActor.run { NSWorkspace.shared.open(url) }
             // macOS asks once more before a call from a link; the user has
             // already said yes to Alfred, so press its Call button.
-            let pressed = await CallPrompt.pressCall()
+            let pressed = await CallPrompt.pressCall(newWindowsSince: before)
             return "\(how == "Call" ? "Calling" : how + " to") \(person.name)" + (pressed ? "" : ". Click Call in FaceTime")
         }
         let item = ResultItem(id: token, title: person.name, detail: "\(handle.label) · \(handle.value)", symbol: "phone.fill")
@@ -405,6 +406,7 @@ struct EmailTool: AssistantTool {
 enum CallPrompt {
     private static let titles = ["Call", "FaceTime", "FaceTime Audio", "Audio"]
     private static let owners = ["com.apple.FaceTime", "com.apple.notificationcenterui"]
+    static let timeLimit: Duration = .seconds(8)
 
     /// Something pressable: a button, or a named action on an element.
     private struct Target {
@@ -414,46 +416,67 @@ enum CallPrompt {
         let action: String?
     }
 
-    /// Waits up to 8 s for the prompt; true once Call is pressed.
-    static func pressCall() async -> Bool {
+    /// On-screen window numbers, taken just before the call URL opens, so
+    /// the prompt's window (and the app that owns it) can be told apart.
+    static func windowNumbers() -> Set<Int> {
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        return Set(list.compactMap { $0[kCGWindowNumber as String] as? Int })
+    }
+
+    /// Owners (pid, name) of windows that weren't there before.
+    private static func newWindowOwners(since before: Set<Int>) -> [(pid: pid_t, name: String)] {
+        let me = ProcessInfo.processInfo.processIdentifier
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        var owners: [(pid_t, String)] = []
+        for window in list {
+            guard let number = window[kCGWindowNumber as String] as? Int, !before.contains(number),
+                  let pid = window[kCGWindowOwnerPID as String] as? pid_t, pid != me,
+                  !owners.contains(where: { $0.0 == pid }) else { continue }
+            owners.append((pid, window[kCGWindowOwnerName as String] as? String ?? "?"))
+        }
+        return owners
+    }
+
+    /// Presses the prompt's Call button within `timeLimit`; true if pressed.
+    /// Runs off the main actor (Accessibility calls are thread-safe), so
+    /// the notch stays responsive; elements never leave this one task.
+    static func pressCall(newWindowsSince before: Set<Int>) async -> Bool {
         guard AXIsProcessTrusted() else { return false }
-        let deadline = ContinuousClock.now + .seconds(8)
-        var seen: [String] = []
-        while ContinuousClock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(250))
-            // Found and pressed on the main actor: Accessibility elements
-            // can't cross actors.
-            let (pressed, labels): (String?, [String]) = await MainActor.run {
+        return await Task.detached(priority: .userInitiated) {
+            let deadline = Date().addingTimeInterval(Double(timeLimit.components.seconds))
+            var seen: [String] = []
+            var appeared: [String] = []
+            while Date() < deadline {
+                try? await Task.sleep(for: .milliseconds(200))
+                let fresh = newWindowOwners(since: before)
+                appeared = fresh.map(\.name)
+                var pids = owners.compactMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0).first?.processIdentifier }
+                pids += fresh.map(\.pid).filter { !pids.contains($0) }
                 var targets: [Target] = []
-                for owner in owners {
-                    guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: owner).first else { continue }
-                    let root = AXUIElementCreateApplication(app.processIdentifier)
-                    AXUIElementSetMessagingTimeout(root, 0.5)
-                    collect(root, depth: 0, into: &targets)
+                for pid in pids where Date() < deadline {
+                    let root = AXUIElementCreateApplication(pid)
+                    AXUIElementSetMessagingTimeout(root, 0.25)
+                    collect(root, depth: 0, deadline: deadline, into: &targets)
                 }
                 // "Call" first; the others only when they're the only choice.
                 for title in titles {
                     for target in targets where target.label == title {
-                        let result = AXUIElementPerformAction(target.element, (target.action ?? kAXPressAction) as CFString)
-                        if result == .success { return (title, []) }
+                        if AXUIElementPerformAction(target.element, (target.action ?? kAXPressAction) as CFString) == .success {
+                            Log.tools.notice("call: pressed \(title, privacy: .public)")
+                            return true
+                        }
                     }
                 }
-                return (nil, targets.map(\.label))
+                seen = targets.map(\.label)
             }
-            if let pressed {
-                Log.tools.notice("call: pressed \(pressed, privacy: .public)")
-                return true
-            }
-            seen = labels
-        }
-        // For diagnosis: what was there instead.
-        Log.tools.notice("call: no Call button; saw \(seen.prefix(25).joined(separator: " | "), privacy: .public)")
-        return false
+            // For diagnosis: where the prompt is, and what was there.
+            Log.tools.notice("call: no Call button; new windows from \(appeared.joined(separator: ", "), privacy: .public); saw \(seen.prefix(25).joined(separator: " | "), privacy: .public)")
+            return false
+        }.value
     }
 
-    @MainActor
-    private static func collect(_ element: AXUIElement, depth: Int, into targets: inout [Target]) {
-        guard depth < 12, targets.count < 120 else { return }
+    private static func collect(_ element: AXUIElement, depth: Int, deadline: Date, into targets: inout [Target]) {
+        guard depth < 12, targets.count < 120, Date() < deadline else { return }
         var role: CFTypeRef?
         AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
         if (role as? String) == "AXButton" {
@@ -476,6 +499,6 @@ enum CallPrompt {
         var children: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &children) == .success,
               let list = children as? [AXUIElement] else { return }
-        for child in list { collect(child, depth: depth + 1, into: &targets) }
+        for child in list { collect(child, depth: depth + 1, deadline: deadline, into: &targets) }
     }
 }
